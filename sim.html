@@ -1,0 +1,682 @@
+<meta charset="utf-8">
+<title>Circles Lab</title>
+<style>
+  :root {
+    --bg: #0b0c10; --panel: #14161d; --line: #262a35; --txt: #e7e9ee; --dim: #8b93a7;
+    --acc: #5ad1a0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--txt);
+         font: 13px/1.4 ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+         display: flex; height: 100vh; overflow: hidden; }
+  #stage { flex: 1; display: flex; align-items: center; justify-content: center;
+           min-width: 0; padding: 10px; }
+  canvas { height: 100%; max-height: 100%; background: #050508; border-radius: 8px; }
+  #panel { width: 330px; flex: none; background: var(--panel); border-left: 1px solid var(--line);
+           padding: 14px; overflow-y: auto; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim);
+       margin: 18px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 5px; }
+  h2:first-child { margin-top: 0; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 7px 0; }
+  .row label { flex: 1; color: var(--dim); }
+  .row input[type=range] { flex: 1.4; accent-color: var(--acc); min-width: 0; }
+  .row output { width: 58px; text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=text] { width: 100%; background: #0c0e14; border: 1px solid var(--line);
+                     color: var(--txt); padding: 6px 8px; border-radius: 5px; font: inherit; }
+  button { background: #1d212b; border: 1px solid var(--line); color: var(--txt);
+           padding: 7px 10px; border-radius: 5px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--acc); }
+  button.p { background: var(--acc); color: #06231a; border-color: var(--acc); font-weight: 600; }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  #hud { margin-top: 12px; font-variant-numeric: tabular-nums; color: var(--dim);
+         white-space: pre; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  #dump { width: 100%; height: 130px; margin-top: 8px; display: none; background: #0c0e14;
+          border: 1px solid var(--line); color: var(--acc); font-family: ui-monospace, monospace;
+          font-size: 11px; padding: 6px; border-radius: 5px; }
+  @media (max-width: 800px) { body { flex-direction: column; } #panel { width: 100%; height: 45vh; } }
+</style>
+
+<div id="stage"><canvas id="cv"></canvas></div>
+<div id="panel">
+  <h2>Состав</h2>
+  <input type="text" id="cc" value="br,ar,us,de,fr,jp,it,es">
+  <div class="row" style="margin-top:8px"><label>Хук</label></div>
+  <input type="text" id="hook" value="WHO WILL WIN">
+
+  <h2>Скорость</h2>
+  <div class="row"><label>старт</label><input type="range" id="v0" min="5" max="400" step="1" value="400"><output></output></div>
+  <div class="row"><label>+% за рикошет</label><input type="range" id="gain" min="0" max="40" step="0.5" value="6"><output></output></div>
+  <div class="row"><label>потолок до дуэли</label><input type="range" id="vEarly" min="80" max="6000" step="20" value="2000"><output></output></div>
+  <div class="row"><label>отскок ±° мин</label><input type="range" id="jitMin" min="0" max="45" step="1" value="10"><output></output></div>
+  <div class="row"><label>отскок ±° макс</label><input type="range" id="jitMax" min="0" max="60" step="1" value="25"><output></output></div>
+  <div class="row"><label>+% к скорости каждые 3с</label><input type="range" id="esc" min="0" max="40" step="1" value="5"><output></output></div>
+  <div class="row"><label>потолок в дуэли</label><input type="range" id="vmax" min="200" max="12000" step="100" value="6000"><output></output></div>
+
+  <h2>Арена</h2>
+  <div class="row"><label>радиус круга</label><input type="range" id="R" min="250" max="500" step="5" value="500"><output></output></div>
+  <div class="row"><label>радиус шарика</label><input type="range" id="br" min="12" max="70" step="1" value="49"><output></output></div>
+  <div class="row"><label>кольцо спавна</label><input type="range" id="spawnR" min="0.2" max="0.9" step="0.05" value="0.85"><output></output></div>
+
+  <h2>Линии</h2>
+  <div class="row"><label>на старте</label><input type="range" id="l0" min="2" max="30" step="1" value="11"><output></output></div>
+  <div class="row"><label>максимум</label><input type="range" id="lmax" min="4" max="60" step="1" value="24"><output></output></div>
+  <div class="row"><label>скольжение °/с (реф. ≈10)</label><input type="range" id="slide" min="0" max="400" step="1" value="10"><output></output></div>
+  <div class="row"><label>зазор якорей ° (реф. ≈11.7)</label><input type="range" id="gap" min="0.5" max="20" step="0.5" value="11.5"><output></output></div>
+  <div class="row"><label>разброс веера °</label><input type="range" id="spread" min="0" max="360" step="10" value="0"><output></output></div>
+  <div class="row"><label>разброс в дуэли °</label><input type="range" id="spreadDuel" min="0" max="360" step="10" value="300"><output></output></div>
+  <div class="row"><label>тень владельца ×</label><input type="range" id="shadow" min="0" max="3" step="0.1" value="1"><output></output></div>
+  <div class="row"><label>пауза между срезами</label><input type="range" id="cutEvery" min="0" max="2" step="0.05" value="0"><output></output></div>
+
+  <h2>Награда за стенку</h2>
+  <div class="row"><label>полная до, с</label><input type="range" id="rwF" min="0" max="120" step="5" value="25"><output></output></div>
+  <div class="row"><label>ноль после, с</label><input type="range" id="rwZ" min="5" max="150" step="5" value="45"><output></output></div>
+
+  <h2>Финал</h2>
+  <div class="row"><label>слоумо за N сек до конца</label><input type="range" id="slowSecs" min="0.2" max="5" step="0.1" value="0.5"><output></output></div>
+  <div class="row"><label>во сколько раз</label><input type="range" id="slowTo" min="0.1" max="1" step="0.02" value="0.22"><output></output></div>
+  <div class="row"><label>приближение ×</label><input type="range" id="zoom" min="1" max="3" step="0.05" value="1.9"><output></output></div>
+
+  <h2>Просмотр</h2>
+  <div class="row"><label>темп ×</label><input type="range" id="rate" min="0.15" max="4" step="0.05" value="1"><output></output></div>
+  <div class="row"><label>шаг физики, px</label><input type="range" id="stepPx" min="1" max="20" step="1" value="6"><output></output></div>
+
+  <div class="btns">
+    <button class="p" id="again">Заново</button>
+    <button id="same">Тот же сид</button>
+    <button id="pause">Пауза</button>
+    <button id="muteBtn">Звук: вкл</button>
+    <button id="dumpBtn">Константы</button>
+  </div>
+  <div id="hud"></div>
+  <textarea id="dump" readonly></textarea>
+</div>
+
+<script>
+const W = 1080, H = 1920, TAU = Math.PI * 2;
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+cv.width = W; cv.height = H;
+
+const $ = id => document.getElementById(id);
+const IDS = ["v0","gain","vEarly","vmax","jitMin","jitMax","esc","R","br","spawnR","l0","lmax","slide","gap","spread",
+             "spreadDuel","shadow","cutEvery","rwF","rwZ","slowSecs","slowTo","zoom","rate","stepPx"];
+const P = {};
+function readParams() {
+  for (const id of IDS) {
+    P[id] = parseFloat($(id).value);
+    const o = $(id).nextElementSibling;
+    if (o && o.tagName === "OUTPUT") o.value = $(id).value;
+  }
+  P.CX = W / 2; P.CY = H / 2 + 60;
+}
+IDS.forEach(id => $(id).addEventListener("input", () => {
+  readParams();
+  if (["R","br","spawnR","l0","v0"].includes(id)) restart(seed);   // geometry can't shift mid-flight
+}));
+
+// ---------------------------------------------------------------- flags
+const flagCache = {}, FALLBACK = ["#ff4d4d","#4d9bff","#4dff88","#ffd24d","#c04dff","#4dfff0","#ff8f4d","#ff4dc4"];
+function loadFlag(cc, idx) {
+  if (flagCache[cc]) return flagCache[cc];
+  const rec = { img: null, col: FALLBACK[idx % FALLBACK.length] };
+  flagCache[cc] = rec;
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => { rec.img = img; try { rec.col = dominant(img); } catch (e) {} recolour(); };
+  img.onerror = () => {};
+  img.src = "https://flagcdn.com/w320/" + cc + ".png";
+  return rec;
+}
+function dominant(img) {
+  const c = document.createElement("canvas"); c.width = 60; c.height = 40;
+  const x = c.getContext("2d", { willReadFrequently: true });
+  x.drawImage(img, 0, 0, 60, 40);
+  const d = x.getImageData(0, 0, 60, 40).data, bins = {};
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i+1], b = d[i+2];
+    if (Math.max(r,g,b) - Math.min(r,g,b) < 60) continue;      // skip white/grey/black
+    const k = (r>>5)*64 + (g>>5)*8 + (b>>5);
+    bins[k] = bins[k] || [0,0,0,0];
+    bins[k][0] += r; bins[k][1] += g; bins[k][2] += b; bins[k][3]++;
+  }
+  let best = null;
+  for (const k in bins) if (!best || bins[k][3] > bins[best][3]) best = k;
+  if (!best) return "#ffffff";
+  const n = bins[best][3];
+  return rgb2hex(bins[best][0]/n, bins[best][1]/n, bins[best][2]/n);
+}
+const rgb2hex = (r,g,b) => "#" + [r,g,b].map(v => Math.round(v).toString(16).padStart(2,"0")).join("");
+function hex2hsv(h) {
+  const r = parseInt(h.slice(1,3),16)/255, g = parseInt(h.slice(3,5),16)/255, b = parseInt(h.slice(5,7),16)/255;
+  const mx = Math.max(r,g,b), mn = Math.min(r,g,b), d = mx-mn;
+  let hu = 0;
+  if (d) hu = mx===r ? 60*(((g-b)/d)%6) : mx===g ? 60*((b-r)/d+2) : 60*((r-g)/d+4);
+  return [(hu+360)%360, mx ? d/mx : 0, mx];
+}
+function hsv2hex(h, s, v) {
+  const c = v*s, x = c*(1-Math.abs((h/60)%2-1)), m = v-c;
+  const t = h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+  return rgb2hex((t[0]+m)*255, (t[1]+m)*255, (t[2]+m)*255);
+}
+// Half the world's flags are red-dominant; fan crowded hues apart so tethers
+// stay tellable apart while each still reads as its flag's colour.
+function recolour() {
+  const gapH = 34, budget = 60;
+  const arr = balls.map((b,i) => ({ i, h: hex2hsv(flagCache[b.cc].col) }));
+  arr.sort((a,z) => a.h[0] - z.h[0]);
+  const cl = [[0]];
+  for (let k = 1; k < arr.length; k++) {
+    if (arr[k].h[0] - arr[k-1].h[0] < gapH) cl[cl.length-1].push(k); else cl.push([k]);
+  }
+  for (const c of cl) {
+    const m = c.length, first = arr[c[0]].h[0], last = arr[c[m-1]].h[0];
+    const centre = first + ((last - first) % 360) / 2;
+    const st = m > 1 ? Math.min(gapH, 2*budget/(m-1)) : 0;
+    c.forEach((idx, k) => {
+      const hue = (centre + (k - (m-1)/2) * st + 360) % 360;
+      balls[arr[idx].i].col = hsv2hex(hue, Math.max(arr[idx].h[1], 0.55), 1);
+    });
+  }
+  for (const b of balls) b.disc = null;
+}
+function discFor(b) {
+  const rec = flagCache[b.cc], px = Math.round(P.br * 2);
+  if (!rec.img) return null;
+  const c = document.createElement("canvas"); c.width = c.height = px;
+  const x = c.getContext("2d");
+  x.beginPath(); x.arc(px/2, px/2, px/2, 0, TAU); x.clip();
+  const s = Math.min(rec.img.width, rec.img.height);
+  x.drawImage(rec.img, (rec.img.width-s)/2, (rec.img.height-s)/2, s, s, 0, 0, px, px);
+  return c;
+}
+
+// ---------------------------------------------------------------- sim
+// State kept outside the closure so a lookahead run can rewind it.
+let rndState = 0;
+function rnd() {
+  rndState = rndState + 0x6D2B79F5 | 0;
+  let t = Math.imul(rndState ^ rndState >>> 15, 1 | rndState);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+let balls = [], seed = 1, T = 0, paused = false, over = null;
+const norm = a => ((a % TAU) + TAU) % TAU;
+// A tether is just an angle on the wall. Its x,y is derived, never stored -
+// anchors slide, so a fixed point would be a lie the moment the ball moves.
+const ax = a => P.CX + P.R * Math.cos(a);
+const ay = a => P.CY + P.R * Math.sin(a);
+const ballAng = b => Math.atan2(b.y - P.CY, b.x - P.CX);
+
+function restart(s) {
+  seed = s === undefined ? (Math.random() * 1e9) | 0 : s;
+  rndState = seed | 0;
+  const ccs = $("cc").value.split(",").map(x => x.trim().toLowerCase()).filter(Boolean);
+  const off = rnd() * TAU, share = TAU / ccs.length;
+  balls = ccs.map((cc, i) => {
+    const a = off + i * share + (rnd() - 0.5) * 0.3;
+    const rr = P.R * P.spawnR, dir = rnd() * TAU;
+    const lines = [];
+    for (let k = 0; k < P.l0; k++)                       // own wedge, evenly filled
+      lines.push(norm(a + (k - (P.l0-1)/2) * share / (P.l0 + 1)));
+    const rec = loadFlag(cc, i);
+    return { cc, i, col: rec.col, disc: null, lines, alive: true, bounces: 0, ready: 0,
+             nextBounce: 0, crack: -1, spd: P.v0,
+             x: P.CX + rr * Math.cos(a), y: P.CY + rr * Math.sin(a),
+             vx: Math.cos(dir), vy: Math.sin(dir) };
+  });
+  for (const b of balls) { b.vx *= b.spd; b.vy *= b.spd; }
+  escStep = 0;
+  recolour();
+  T = 0; over = null; nextDecay = 0; slowCur = 1; slowAt = -1;
+  ending = null; doomed = null; cracked = false;
+  camX = P.CX; camY = P.CY; camZ = 1;
+}
+// Speed comes from a ball's own bounce tally - wall or ball, any ricochet counts.
+let curCap = 1e9;
+// Speed accumulates instead of being recomputed from the bounce tally. It used
+// to be re-derived every frame and clipped by whatever ceiling was in force, so
+// the moment the duel lifted the ceiling a ball snapped straight to its
+// uncapped value - a measured 2000 to 6000 px/s inside three frames. Raising
+// the ceiling now only allows further growth.
+const ESCALATE_EVERY = 3;
+let escStep = 0;
+const speedOf = b => b.spd;
+
+// A ball wedged against the wall or between two others resolves a bounce on
+// every substep. At +6% each that is 1.06^300 - one run in twelve pinned the
+// 12000 ceiling while six balls were still alive. A ball may only bank a
+// bounce every so often; a real ricochet is never faster than this.
+const BOUNCE_COOLDOWN = 0.05;
+
+// The lab runs forward in real time, so it cannot know when the kill lands -
+// which had slow motion firing seconds early and lapsing before the last
+// tether went. So it looks: at the duel it clones the world, races it to the
+// finish with the sound off, then rewinds and schedules the slowdown to end
+// on the kill. main.py gets this for free, it renders after the fact.
+function snapshot() {
+  // ending/doomed/cracked belong here too: the lookahead runs all the way into
+  // the death scene, and without them the rewind left the live run believing
+  // the match was already over.
+  return { rnd: rndState, T, nextDecay, ending, doomed, cracked, escStep,
+           balls: balls.map(b => ({ b, x: b.x, y: b.y, vx: b.vx, vy: b.vy,
+                                    lines: b.lines.slice(), alive: b.alive,
+                                    bounces: b.bounces, ready: b.ready,
+                                    nextBounce: b.nextBounce, crack: b.crack, spd: b.spd })) };
+}
+function restore(s) {
+  rndState = s.rnd; T = s.T; nextDecay = s.nextDecay;
+  ending = s.ending; doomed = s.doomed; cracked = s.cracked; escStep = s.escStep;
+  for (const r of s.balls) Object.assign(r.b, {
+    x: r.x, y: r.y, vx: r.vx, vy: r.vy, lines: r.lines.slice(), alive: r.alive,
+    bounces: r.bounces, ready: r.ready, nextBounce: r.nextBounce, crack: r.crack, spd: r.spd });
+}
+function secondsToKill(limit) {
+  const save = snapshot(), quiet = window.ping;
+  window.ping = () => {};
+  let n = 0;
+  while (balls.filter(b => b.alive).length > 1 && n < limit * 60) { core(1/60); n++; }
+  const killed = balls.filter(b => b.alive).length <= 1;   // read it before
+  window.ping = quiet;                                     // rewinding, not after
+  restore(save);
+  return killed ? n / 60 : null;
+}
+
+// Anchors chase their owner around the rim and shove each other aside so two
+// never sit on the same spot. Run once per frame - they drift far slower than
+// the balls fly, and doing it per substep would cost everything for nothing.
+function slideAnchors(dt) {
+  const all = [];
+  for (const b of balls) if (b.alive)
+    for (let k = 0; k < b.lines.length; k++) all.push({ b, k, a: norm(b.lines[k]) });
+  if (!all.length) return;
+  const duelRush = balls.filter(b => b.alive).length <= 2 ? 6 : 1;   // 300 deg at
+  const step = P.slide * duelRush * Math.PI / 180 * dt;              // 10 deg/s is 30s
+  // Each tether gets its own target angle, spread across an arc centred on the
+  // owner - all of them aiming at the single nearest point is what made the
+  // duel look like two thin brooms. Once it is down to two balls the arc opens
+  // right up and the fans wrap the rim.
+  const duel = balls.filter(b => b.alive).length <= 2;
+  const spread = (duel ? P.spreadDuel : P.spread) * Math.PI / 180;
+  const byBall = new Map();
+  for (const it of all) {
+    if (!byBall.has(it.b)) byBall.set(it.b, []);
+    byBall.get(it.b).push(it);
+  }
+  for (const [b, list] of byBall) {
+    list.sort((x, y) => x.a - y.a);
+    const m = list.length, mid = ballAng(b);
+    list.forEach((it, k) => {
+      const want = m > 1 ? mid + spread * ((k + 0.5) / m - 0.5) : mid;
+      let d = norm(want - it.a);
+      if (d > Math.PI) d -= TAU;                          // shortest way round
+      it.a = norm(it.a + Math.max(-step, Math.min(step, d)));
+    });
+  }
+  // Keep them off each other: cut the ring at its widest empty stretch, then
+  // it is a plain line to space out. Pushing pairs apart in a loop never
+  // converged - every push re-ordered the ring behind it.
+  all.sort((x, y) => x.a - y.a);
+  const n = all.length, sep = Math.min(P.gap * Math.PI / 180, TAU / (n + 1));
+  let cut = 0, widest = -1;
+  for (let i = 0; i < n; i++) {
+    const d = (i + 1 < n ? all[i+1].a - all[i].a : all[0].a + TAU - all[i].a);
+    if (d > widest) { widest = d; cut = (i + 1) % n; }
+  }
+  const base = all[cut].a;
+  const p = new Array(n);
+  for (let k = 0; k < n; k++) p[k] = norm(all[(cut + k) % n].a - base);
+  for (let k = 1; k < n; k++) p[k] = Math.max(p[k], p[k-1] + sep);
+  if (p[n-1] > TAU - sep) {                       // overflowed the cut, walk it back
+    p[n-1] = TAU - sep;
+    for (let k = n - 2; k >= 0; k--) p[k] = Math.min(p[k], p[k+1] - sep);
+  }
+  for (let k = 0; k < n; k++) {
+    const it = all[(cut + k) % n];
+    it.b.lines[it.k] = norm(base + p[k]);
+  }
+}
+
+function segDist(px, py, x1, y1, x2, y2) {
+  const dx = x2-x1, dy = y2-y1, L = dx*dx + dy*dy;
+  const t = L === 0 ? 0 : Math.max(0, Math.min(1, ((px-x1)*dx + (py-y1)*dy) / L));
+  return Math.hypot(px - (x1 + t*dx), py - (y1 + t*dy));
+}
+function rewardP(t) {
+  if (t <= P.rwF) return 1;
+  if (t >= P.rwZ) return 0;
+  return 1 - (t - P.rwF) / (P.rwZ - P.rwF);
+}
+// ---------------------------------------------------------------- sound
+// Same three voices main.py renders into the mp4, so what you hear while
+// tuning is what comes out. Browsers refuse audio until the page is clicked.
+let actx = null, muted = false;
+addEventListener("pointerdown", () => {
+  if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); loadSamples(); }
+  if (actx.state === "suspended") actx.resume();
+}, { once: false });
+
+const samples = {};
+function loadSamples() {
+  for (const [key, file] of [["impact", "sounds/impact.mp3"], ["web", "sounds/web.mp3"]])
+    fetch(file).then(r => r.arrayBuffer())
+      .then(a => actx.decodeAudioData(a))
+      .then(b => { samples[key] = b; })
+      .catch(() => {});
+}
+
+const SCALE = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
+let noteAt = 0, lastSound = 0;
+function ping(kind) {
+  if (!actx || muted) return;
+  if (!["die", "slow", "crack", "gone"].includes(kind) && actx.currentTime - lastSound < 0.075) return;
+  lastSound = actx.currentTime;
+  const t0 = actx.currentTime, g = actx.createGain();
+  g.connect(actx.destination);
+  if (kind === "crack" || kind === "gone") {  // the real glass, same files main.py uses
+    const buf = samples[kind === "crack" ? "impact" : "web"];
+    if (!buf) return;
+    const src = actx.createBufferSource();
+    src.buffer = buf;
+    g.gain.setValueAtTime(0.9, t0);
+    src.connect(g);
+    if (kind === "gone") src.start(t0, 0, 1.0);   // just the first second
+    else src.start(t0);
+  } else if (kind === "slow") {                      // time easing down: falling swell
+    const o = actx.createOscillator();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(700, t0);
+    o.frequency.exponentialRampToValueAtTime(90, t0 + 1.1);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.28, t0 + 0.12);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 1.1);
+    o.connect(g); o.start(t0); o.stop(t0 + 1.15);
+  } else if (kind === "die") {                // a ball loses its last tether
+    const o = actx.createOscillator();
+    o.type = "square";
+    o.frequency.setValueAtTime(220, t0);
+    o.frequency.exponentialRampToValueAtTime(45, t0 + 0.55);
+    g.gain.setValueAtTime(0.5, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.6);
+    o.connect(g); o.start(t0); o.stop(t0 + 0.62);
+  } else if (kind === "hit") {                // ball on ball: rare, so a thud
+    const o = actx.createOscillator();
+    o.type = "sine"; o.frequency.value = 90;
+    g.gain.setValueAtTime(0.42, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.26);
+    o.connect(g); o.start(t0); o.stop(t0 + 0.27);
+  } else if (kind === "wall") {               // soft click
+    const o = actx.createOscillator();
+    o.type = "triangle"; o.frequency.value = 1500;
+    g.gain.setValueAtTime(0.13, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.055);
+    o.connect(g); o.start(t0); o.stop(t0 + 0.06);
+  } else {                                    // a cut: the melody rides these
+    const o = actx.createOscillator();
+    o.type = "sine"; o.frequency.value = SCALE[noteAt++ % SCALE.length];
+    g.gain.setValueAtTime(0.26, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.26);
+    o.connect(g); o.start(t0); o.stop(t0 + 0.27);
+  }
+}
+
+// Scatter a bounce by a few degrees. Perfect reflection drops balls into
+// repeating orbits; never rotated back into the surface it is leaving.
+function jitter(dx, dy, nx, ny) {
+  const mag = P.jitMin + rnd() * Math.max(0, P.jitMax - P.jitMin);
+  const a = (rnd() < 0.5 ? -mag : mag) * Math.PI / 180;
+  const ca = Math.cos(a), sa = Math.sin(a);
+  const rx = dx * ca - dy * sa, ry = dx * sa + dy * ca;
+  return (rx * nx + ry * ny > 0) ? [rx, ry] : [dx, dy];
+}
+
+// The last one out stays on screen and breaks apart; the rest just go.
+function retire(b) {
+  if (balls.filter(x => x.alive && x !== b).length === 1 && ending === null) {
+    ending = T; doomed = b; b.crack = 0;
+  } else {
+    b.alive = false;
+  }
+}
+
+const bounce = b => {
+  if (T < b.nextBounce) return;
+  b.nextBounce = T + BOUNCE_COOLDOWN;
+  b.bounces++;
+  b.spd = Math.min(curCap, b.spd * (1 + P.gain / 100));
+};
+
+function step(h) {
+  const alive = balls.filter(b => b.alive);
+  curCap = alive.length > 2 ? P.vEarly : P.vmax;   // the ceiling lifts for the duel
+  // Once the last tether is cut the pair keeps rolling for a moment and coasts
+  // to a stop, so the kill can be watched instead of just being over.
+  const roll = ending === null ? 1 : Math.max(0, 1 - (T - ending) / DEATH_MOVE);
+  for (const b of alive) {                                   // move + wall
+    const sp = speedOf(b), cur = Math.hypot(b.vx, b.vy) || 1;
+    b.vx = b.vx / cur * sp; b.vy = b.vy / cur * sp;
+    b.x += b.vx * h * roll; b.y += b.vy * h * roll;
+    const d = Math.hypot(b.x - P.CX, b.y - P.CY) || 1e-9;
+    if (d + P.br > P.R) {
+      const nx = (b.x - P.CX)/d, ny = (b.y - P.CY)/d;
+      b.x = P.CX + nx*(P.R - P.br); b.y = P.CY + ny*(P.R - P.br);
+      const vn = b.vx*nx + b.vy*ny;
+      const [jx, jy] = jitter(b.vx - 2*vn*nx, b.vy - 2*vn*ny, -nx, -ny);
+      b.vx = jx; b.vy = jy;
+      bounce(b); ping("wall");
+      if (ending === null && b.lines.length < P.lmax && rnd() < rewardP(T))
+        b.lines.push(norm(Math.atan2(ny, nx)));
+    }
+  }
+  for (let i = 0; i < alive.length; i++)                     // ball vs ball
+    for (let j = i+1; j < alive.length; j++) {
+      const a = alive[i], c = alive[j];
+      const dx = c.x-a.x, dy = c.y-a.y, d = Math.hypot(dx,dy) || 1e-9;
+      if (d < P.br*2) {
+        const nx = dx/d, ny = dy/d, ov = (P.br*2 - d)/2;
+        a.x -= nx*ov; a.y -= ny*ov; c.x += nx*ov; c.y += ny*ov;
+        const van = a.vx*nx + a.vy*ny, vcn = c.vx*nx + c.vy*ny;
+        if (van - vcn > 0) {                                 // direction only, speed kept
+          let adx = a.vx + (vcn-van)*nx, ady = a.vy + (vcn-van)*ny;
+          let cdx = c.vx + (van-vcn)*nx, cdy = c.vy + (van-vcn)*ny;
+          if (!adx && !ady) { adx = -nx; ady = -ny; }
+          if (!cdx && !cdy) { cdx = nx; cdy = ny; }
+          bounce(a); bounce(c); ping("hit");
+          [adx, ady] = jitter(adx, ady, -nx, -ny);
+          [cdx, cdy] = jitter(cdx, cdy, nx, ny);
+          const al = Math.hypot(adx,ady) || 1, cl = Math.hypot(cdx,cdy) || 1;
+          const sa = speedOf(a), sc = speedOf(c);
+          a.vx = adx/al*sa; a.vy = ady/al*sa;
+          c.vx = cdx/cl*sc; c.vy = cdy/cl*sc;
+        }
+      }
+    }
+  for (const b of alive) {                                   // cutting = taking over
+    if (ending !== null) break;                              // the match is decided
+    if (b.ready > T) continue;
+    for (const o of alive) {
+      if (o === b || !o.lines.length) continue;
+      const clip = P.br * 2 * P.shadow;                      // span hidden behind the owner
+      const keep = [], taken = [];
+      for (const ang of o.lines) {
+        const x1 = ax(ang), y1 = ay(ang);
+        const dx = o.x - x1, dy = o.y - y1, len = Math.hypot(dx, dy);
+        if (len <= clip) { keep.push(ang); continue; }
+        const f = (len - clip) / len;
+        if (segDist(b.x, b.y, x1, y1, x1 + dx*f, y1 + dy*f) < P.br) taken.push(ang);
+        else keep.push(ang);
+      }
+      if (taken.length) {
+        ping("cut");
+        o.lines = keep;
+        // The cut tether changes hands on the spot, then slides over to its new
+        // owner - that turf war is what the reference looks like. Past the
+        // reward window it just snaps instead: tethers only ever moving around
+        // conserves them, and two even balls would trade forever.
+        if (T < P.rwZ)
+          for (const ang of taken) if (b.lines.length < P.lmax) b.lines.push(ang);
+        if (P.cutEvery > 0) b.ready = T + P.cutEvery;
+        if (!o.lines.length) { ping("die"); retire(o); }
+      }
+    }
+  }
+  T += h;
+}
+
+// ---------------------------------------------------------------- draw
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#050508"; ctx.fillRect(0, 0, W, H);
+  const hw = W / (2 * camZ), hh = H / (2 * camZ);       // keep the view on-screen
+  const vx = Math.min(Math.max(camX, hw), W - hw), vy = Math.min(Math.max(camY, hh), H - hh);
+  ctx.translate(W / 2, H / 2); ctx.scale(camZ, camZ); ctx.translate(-vx, -vy);
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(P.CX, P.CY, P.R, 0, TAU); ctx.stroke();
+
+  const hook = $("hook").value.toUpperCase();
+  const drawHook = () => {
+    let px = 78;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    do { ctx.font = "900 " + px + "px Arial Black, Impact, sans-serif"; px -= 3; }
+    while (px > 30 && ctx.measureText(hook).width > W - 120);
+    ctx.lineWidth = 8; ctx.strokeStyle = "#000"; ctx.strokeText(hook, W/2, 300);
+    ctx.fillStyle = "#fff"; ctx.fillText(hook, W/2, 300);
+  };
+  const alive = balls.filter(b => b.alive);
+  ctx.lineWidth = 3;
+  for (const b of alive) {
+    ctx.strokeStyle = b.col; ctx.beginPath();
+    for (const a of b.lines) { ctx.moveTo(ax(a), ay(a)); ctx.lineTo(b.x, b.y); }
+    ctx.stroke();
+  }
+  for (const b of alive) {
+    if (!b.disc) b.disc = discFor(b);
+    if (b.disc) ctx.drawImage(b.disc, b.x - P.br, b.y - P.br, P.br*2, P.br*2);
+    else { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, P.br, 0, TAU); ctx.fill(); }
+    ctx.strokeStyle = b.col; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(b.x, b.y, P.br, 0, TAU); ctx.stroke();
+    if (b.crack > 0) {
+      ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let k = 0; k < 5; k++) {
+        const a0 = b.i * 2.399 + k * 1.2566;
+        ctx.moveTo(b.x, b.y);
+        for (const [st, wig] of [[0.35, 0], [0.72, 0.22], [1.05, -0.26]]) {
+          const rr = P.br * b.crack * st, an = a0 + wig;
+          ctx.lineTo(b.x + rr * Math.cos(an), b.y + rr * Math.sin(an));
+        }
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (hook) drawHook();
+  if (over) {
+    ctx.textAlign = "center"; ctx.font = "900 64px Arial Black, sans-serif";
+    ctx.lineWidth = 8; ctx.strokeStyle = "#000";
+    ctx.strokeText(over, W/2, H - 260); ctx.fillStyle = "#fff"; ctx.fillText(over, W/2, H - 260);
+  }
+}
+
+let nextDecay = 0, slowCur = 1, slowAt = -1;
+let ending = null, doomed = null, cracked = false;
+const DEATH_MOVE = 0.5, CRACK_SECS = 0.45;
+let camX = 0, camY = 0, camZ = 1;      // eased push-in over the slow finish
+// The kill shot is the whole point of the video, so it plays out in slow
+// motion: once the trailing ball is down to its last few tethers, time eases
+// down and you watch them go one by one.
+function core(dt) {
+  const live = balls.filter(b => b.alive);
+  const vmaxNow = Math.max(...live.map(speedOf), P.v0);
+  const sub = Math.max(1, Math.min(400, Math.ceil(vmaxNow * dt / P.stepPx)));
+  for (let k = 0; k < sub; k++) step(dt / sub);
+  slideAnchors(dt);
+  const stepNow = Math.floor(T / ESCALATE_EVERY);
+  if (stepNow > escStep) {
+    escStep = stepNow;
+    for (const b of balls) if (b.alive) b.spd = Math.min(curCap, b.spd * (1 + P.esc / 100));
+  }
+  if (ending !== null) {
+    const phase = T - ending;
+    doomed.crack = Math.min(1, phase / (DEATH_MOVE + CRACK_SECS));  // ends as it vanishes
+    if (!cracked) { cracked = true; ping("crack"); }
+    if (phase >= DEATH_MOVE + CRACK_SECS && doomed.alive) {
+      doomed.alive = false;
+      ping("gone");
+    }
+    return;                                    // no decay while it plays out
+  }
+  // Sudden death. Fans now hug their owner, so two balls can genuinely never
+  // meet and the run would sit there forever. Past the reward window every
+  // ball starts shedding tethers whether or not anyone cuts them.
+  if (T > P.rwZ && T > nextDecay) {
+    nextDecay = T + 2;
+    let lead = null;
+    for (const b of live) if (!lead || b.lines.length > lead.lines.length) lead = b;
+    for (const b of live) {                    // the leader is spared, so the last
+      if (b === lead || !b.lines.length) continue;   // tether can never go from
+      b.lines.pop();                                 // everyone at once - no draws
+      if (!b.lines.length) { ping("die"); retire(b); }
+    }
+  }
+}
+
+function advance(dtRaw) {
+  const live = balls.filter(b => b.alive);
+  if (live.length === 2 && slowAt < 0) {           // duel just started: go and look
+    const dt = secondsToKill(40);
+    slowAt = dt === null ? Infinity : T + Math.max(0, dt - P.slowSecs);
+  }
+  const want = (live.length === 2 && T >= slowAt) ? P.slowTo : 1;
+  if (want < 1 && slowCur > 0.95) ping("slow");
+  slowCur += (want - slowCur) * Math.min(1, dtRaw * 5);   // ease, never snap
+  core(dtRaw * slowCur);
+  const seen = balls.filter(b => b.alive);
+  const push = want < 1 && seen.length;
+  const tx = push ? seen.reduce((a,b)=>a+b.x,0)/seen.length : P.CX;
+  const ty = push ? seen.reduce((a,b)=>a+b.y,0)/seen.length : P.CY;
+  const tz = push ? P.zoom : 1;
+  const a = 1 - Math.exp(-dtRaw / 0.45);
+  camX += (tx - camX) * a; camY += (ty - camY) * a; camZ += (tz - camZ) * a;
+  const left = balls.filter(b => b.alive);
+  if (left.length <= 1) over = left.length ? left[0].cc.toUpperCase() + " WINS" : "DRAW";
+}
+
+let last = performance.now();
+function frame(now) {
+  const real = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!paused && !over) advance(real * P.rate);
+  draw();
+  const alive = balls.filter(b => b.alive);
+  $("hud").textContent =
+    "сид " + seed + "   время " + T.toFixed(1) + "s   живых " + alive.length +
+    "   линий " + alive.reduce((s,b) => s + b.lines.length, 0) + "\n" +
+    alive.slice().sort((a,b) => b.lines.length - a.lines.length)
+      .map(b => b.cc.toUpperCase() + "  " + String(b.lines.length).padStart(2) + " лин  " +
+                String(Math.round(speedOf(b))).padStart(5) + " px/s  " +
+                String(b.bounces).padStart(3) + " рик").join("\n");
+  requestAnimationFrame(frame);
+}
+
+$("again").onclick = () => restart();
+$("same").onclick = () => restart(seed);
+$("pause").onclick = e => { paused = !paused; e.target.textContent = paused ? "Пуск" : "Пауза"; };
+$("cc").onchange = () => restart();
+$("muteBtn").onclick = e => { muted = !muted; e.target.textContent = muted ? "Звук: выкл" : "Звук: вкл"; };
+$("dumpBtn").onclick = () => {
+  const d = $("dump");
+  d.style.display = d.style.display === "block" ? "none" : "block";
+  d.value =
+    "BALL_R = " + P.br + "\nR = " + P.R + "\nSPAWN_R = " + P.spawnR +
+    "\nLINES_START = " + P.l0 + "\nMAX_LINES = " + P.lmax +
+    "\nSLIDE_DEG = " + P.slide + "\nANCHOR_GAP_DEG = " + P.gap +
+    "\nSHADOW = " + P.shadow + "\nCUT_EVERY = " + P.cutEvery +
+    "\nFAN_SPREAD_DEG, DUEL_SPREAD_DEG = " + P.spread + ", " + P.spreadDuel +
+    "\nSLOWMO_SECS, SLOWMO_TO = " + P.slowSecs + ", " + P.slowTo +
+    "\nSPEED0, SPEED_GAIN = " + P.v0 + ", " + (1 + P.gain/100).toFixed(3) +
+    "\nSPEED_MAX, EARLY_SPEED_MAX = " + P.vmax + ", " + P.vEarly +
+    "\nREWARD_FULL, REWARD_ZERO = " + P.rwF + ", " + P.rwZ;
+};
+
+readParams();
+restart();
+requestAnimationFrame(frame);
+</script>
