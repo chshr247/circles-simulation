@@ -166,6 +166,10 @@ def main():
     a = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):     # captions are full of flags
         sys.stdout.reconfigure(errors="replace")
+    # `gh api repos/{owner}/{repo}` resolves the placeholders from the working
+    # directory's remote, so this cannot run from wherever a scheduler happened
+    # to start it. One chdir here beats a WorkingDirectory nobody set.
+    os.chdir(HERE)
 
     if not a.no_fetch:
         fetch()
@@ -181,6 +185,10 @@ def main():
                                     meta["caption"]))
         cid = upload(mp4, meta["caption"], a.private)
         mark(POSTED, os.path.basename(mp4))
+        # 60 MB a video, three a day: kept, this fills a 50 GB server disk
+        # inside a year and nothing else here would ever notice. The meta file
+        # stays as the record, and CI holds the mp4 for five more days.
+        os.remove(mp4)
         print("posted: %s" % cid)
         if i + 1 < len(q):
             time.sleep(60)     # two uploads back to back look like a bot

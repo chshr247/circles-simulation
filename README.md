@@ -34,12 +34,12 @@ python post.py               # from then on
 Setup, once:
 
 1. `cp .env.example .env` and fill in `TIKTOK_TAU_DIR` and `TIKTOK_TAU_USER`.
-2. In the fork: `python cli.py login -n circles` — its own account, not one
-   shared with another channel.
+2. Give the fork a cookie saved under exactly that name. Its own account: two
+   channels behind one profile get flagged together.
 3. `gh auth login`, if this machine has not already.
-4. Task Scheduler: `python post.py`, a few times a day. It posts one video per
-   run and leaves the rest queued, so running it more often than CI renders is
-   harmless.
+4. A scheduler - systemd timer or Task Scheduler - calling `python post.py` on
+   the same slots CI renders on. It posts one video per run unconditionally, so
+   the timer IS the rate: three slots a day for three renders a day.
 
 The fork must carry the patch that prints `creation_id=` on a successful
 upload — upstream exits 0 on paths that posted nothing, and `post.py` refuses to
