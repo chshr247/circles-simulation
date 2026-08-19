@@ -7,6 +7,7 @@ No tethers left -> the ball dies. Last ball standing wins.
 """
 import argparse, colorsys, json, math, os, random, subprocess, sys, time, urllib.parse, urllib.request, wave
 import numpy as np
+import tags
 from PIL import Image, ImageDraw, ImageFont
 
 if hasattr(sys.stdout, "reconfigure"):    # chart titles arrive in alphabets the
@@ -831,7 +832,9 @@ def write_wav(path, buf, sr=44100):
 
 # ---------------------------------------------------------------- rendering
 def font(px):
-    for name in ("ariblk.ttf", "arialbd.ttf", "impact.ttf"):
+    # The last one is what a Linux runner has; without it PIL falls through to
+    # a bitmap default and the hook renders at about six pixels.
+    for name in ("ariblk.ttf", "arialbd.ttf", "impact.ttf", "DejaVuSans-Bold.ttf"):
         try:
             return ImageFont.truetype(name, px)
         except OSError:
@@ -1008,14 +1011,24 @@ def pick_countries(spec):
 def one(ccs, hook, seed_arg, out, preview, notes=None, want=None):
     seed = find_seed(seed_arg, len(ccs), want)
     run = slow_finish(simulate(seed, len(ccs)))
+    winner = ccs[run["winner"]]
     print("winner: %s  duration: %.1fs  events: %d"
-          % (ccs[run["winner"]].upper(), run["duration"], len(run["events"])))
-    return render(run, ccs, hook, out, preview, notes)
+          % (winner.upper(), run["duration"], len(run["events"])))
+    render(run, ccs, hook, out, preview, notes)
+    # Written beside the mp4 for whoever posts it. Nothing here can be worked
+    # out from the file later: the countries are drawn at random and the winner
+    # is only known once the run has been simulated.
+    with open(os.path.splitext(out)[0] + ".meta.json", "w", encoding="utf-8") as f:
+        json.dump({"hook": hook, "countries": ccs, "winner": winner, "seed": seed,
+                   "caption": tags.caption(hook, ccs, winner)}, f,
+                  ensure_ascii=False, indent=1)
+    return out
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--hook", default="WHO WILL WIN")
+    ap.add_argument("--hook", default="WHO WILL WIN",
+                    help="text on the frame, or \"random\" for one per video")
     ap.add_argument("--countries", default=DEFAULT_CC,
                     help="codes, or random8 / random10 to draw from the pool")
     ap.add_argument("--seed", default="auto")
@@ -1047,7 +1060,8 @@ def main():
             HERE, "out", "circles_%s_%d.mp4" % (time.strftime("%Y%m%d_%H%M%S"), k + 1))
         ccs = pick_countries(a.countries)
         want = ccs.index(a.winner.lower()) if a.winner else None
-        print(one(ccs, a.hook, a.seed, out, a.preview, notes, want))
+        hook = random.choice(tags.HOOKS) if a.hook == "random" else a.hook
+        print(one(ccs, hook, a.seed, out, a.preview, notes, want))
 
 
 if __name__ == "__main__":

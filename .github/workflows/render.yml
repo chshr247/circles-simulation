@@ -1,0 +1,82 @@
+name: render
+
+# One run makes one video and leaves it as an artifact. Nothing is posted from
+# here on purpose: the uploader logs into the web TikTok with a cookie that
+# lives on a desk, and a datacentre IP holding an account's session is how the
+# account is lost. post.py on that desk picks the artifact up.
+on:
+  schedule:
+    # Three a day, UTC, on off-peak minutes. GitHub queues scheduled runs on a
+    # best-effort basis and drops them under load - :00 is the worst minute
+    # there is, so these sit well away from it.
+    - cron: "23 7 * * *"
+    - cron: "23 13 * * *"
+    - cron: "23 19 * * *"
+  workflow_dispatch:
+    inputs:
+      countries:
+        description: 'codes, or random8 / random10'
+        default: random8
+      hook:
+        description: 'text on the frame, or "random"'
+        default: random
+      trending:
+        description: 'chart tracks to pull into the melody pool first (0 = use what is committed)'
+        default: "0"
+
+# Two runs would fight over nothing (out/ dies with the runner) but would burn
+# minutes making a video the desk then posts back to back.
+concurrency:
+  group: render
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    # A 60s video is ~3600 frames drawn at 2160x3840 in PIL. Four minutes on a
+    # desk, three times that here on a bad seed search.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      # ffmpeg is on the current image, but that is the image's business and
+      # not a promise. The font is not on it at all, and without a heavy face
+      # PIL falls back to a bitmap default that renders the hook unreadably
+      # small - see font() in main.py.
+      - name: ffmpeg and a font
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+
+      - run: pip install -r requirements.txt
+
+      # Cheap, and it is the half of the pipeline nothing else exercises: a
+      # broken caption is only noticed on the desk, hours later, by hand.
+      - run: python tags.py
+
+      - name: Make one video
+        run: |
+          python main.py \
+            --countries "${{ inputs.countries || 'random8' }}" \
+            --hook "${{ inputs.hook || 'random' }}" \
+            --trending "${{ inputs.trending || 0 }}"
+
+      # The meta file is not decoration next to the mp4: it carries the caption,
+      # and the caption cannot be rebuilt afterwards - the countries were drawn
+      # at random here and the winner is only known once the run was simulated.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ github.run_id }}
+          path: |
+            out/*.mp4
+            out/*.meta.json
+          # One video is ~60 MB. Five days covers a long weekend with the desk
+          # off; past that the video is gone and the only cost is that it never
+          # reached TikTok.
+          retention-days: 5
+          if-no-files-found: error

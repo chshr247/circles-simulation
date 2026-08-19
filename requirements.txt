@@ -1,0 +1,2 @@
+numpy==2.5.1    # the simulation and the synth
+pillow==12.1.0  # every frame is drawn here
