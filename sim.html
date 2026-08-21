@@ -21,8 +21,10 @@
   .row label { flex: 1; color: var(--dim); }
   .row input[type=range] { flex: 1.4; accent-color: var(--acc); min-width: 0; }
   .row output { width: 58px; text-align: right; font-variant-numeric: tabular-nums; }
-  input[type=text] { width: 100%; background: #0c0e14; border: 1px solid var(--line);
+  input[type=text], select { width: 100%; background: #0c0e14; border: 1px solid var(--line);
                      color: var(--txt); padding: 6px 8px; border-radius: 5px; font: inherit; }
+  select { margin-bottom: 6px; }
+  #packnote { color: #ff7a7a; font-size: 11px; margin: -2px 0 6px; }
   button { background: #1d212b; border: 1px solid var(--line); color: var(--txt);
            padding: 7px 10px; border-radius: 5px; cursor: pointer; font: inherit; }
   button:hover { border-color: var(--acc); }
@@ -39,6 +41,8 @@
 <div id="stage"><canvas id="cv"></canvas></div>
 <div id="panel">
   <h2>Состав</h2>
+  <select id="pack"></select>
+  <div id="packnote"></div>
   <input type="text" id="cc" value="br,ar,us,de,fr,jp,it,es">
   <div class="row" style="margin-top:8px"><label>Хук</label></div>
   <input type="text" id="hook" value="WHO WILL WIN">
@@ -113,17 +117,58 @@ IDS.forEach(id => $(id).addEventListener("input", () => {
   if (["R","br","spawnR","l0","v0"].includes(id)) restart(seed);   // geometry can't shift mid-flight
 }));
 
-// ---------------------------------------------------------------- flags
-const flagCache = {}, FALLBACK = ["#ff4d4d","#4d9bff","#4dff88","#ffd24d","#c04dff","#4dfff0","#ff8f4d","#ff4dc4"];
-function loadFlag(cc, idx) {
-  if (flagCache[cc]) return flagCache[cc];
+// ---------------------------------------------------------------- packs
+// The rosters are the very text files main.py renders from, so the prototype
+// and the video can never disagree about who is in a pack. Read over http:
+// opened straight off disk the fetch is blocked, and then the pack picker is
+// the one thing here that does not work - the sliders, which are the point,
+// still do.
+const PACKS = ["countries", "rappers", "footballers", "adult", "streamers",
+               "presidents", "kpop"];
+let pack = "countries", roster = {};
+const disp = id => roster[id] || id;
+for (const p of PACKS) $("pack").add(new Option(p, p));
+async function loadPack(name, fresh) {
+  const txt = await (await fetch("packs/" + name + ".txt")).text();
+  const next = {};
+  for (const line of txt.split("\n")) {
+    const m = line.trim().match(/^(\S+)\s+(.+)$/);
+    if (m) next[m[1]] = m[2].replace(/ \(.*/, "");   // the disambiguator is
+  }                                                  // Wikipedia's, not ours
+  if (!Object.keys(next).length) throw new Error("empty roster");
+  pack = name; roster = next;
+  for (const k in picCache) delete picCache[k];
+  $("packnote").textContent = "";
+  if (fresh) {
+    const ids = Object.keys(roster).sort(() => Math.random() - 0.5).slice(0, 8);
+    $("cc").value = ids.join(",");
+  }
+  restart();
+}
+function packFailed(e) {
+  $("pack").value = pack;
+  $("packnote").textContent = "ростер не прочитался ("
+    + e.message + ") - открой через python -m http.server";
+}
+$("pack").onchange = () => loadPack($("pack").value, true).catch(packFailed);
+
+// ---------------------------------------------------------------- pictures
+const picCache = {}, FALLBACK = ["#ff4d4d","#4d9bff","#4dff88","#ffd24d","#c04dff","#4dfff0","#ff8f4d","#ff4dc4"];
+// Straight off disk: packs/<pack>/<id>.png is what main.py already fetched and
+// cached, so the prototype draws the same face the render will. A country
+// falls back to flagcdn, the one pack whose pictures have a public URL.
+function loadPic(id, idx) {
+  if (picCache[id]) return picCache[id];
   const rec = { img: null, col: FALLBACK[idx % FALLBACK.length] };
-  flagCache[cc] = rec;
+  picCache[id] = rec;
   const img = new Image();
   img.crossOrigin = "anonymous";
   img.onload = () => { rec.img = img; try { rec.col = dominant(img); } catch (e) {} recolour(); };
-  img.onerror = () => {};
-  img.src = "https://flagcdn.com/w320/" + cc + ".png";
+  img.onerror = () => {
+    if (pack !== "countries" || img.src.indexOf("flagcdn") > -1) return;
+    img.src = "https://flagcdn.com/w320/" + id + ".png";
+  };
+  img.src = "packs/" + pack + "/" + id + ".png";
   return rec;
 }
 function dominant(img) {
@@ -161,7 +206,7 @@ function hsv2hex(h, s, v) {
 // stay tellable apart while each still reads as its flag's colour.
 function recolour() {
   const gapH = 34, budget = 60;
-  const arr = balls.map((b,i) => ({ i, h: hex2hsv(flagCache[b.cc].col) }));
+  const arr = balls.map((b,i) => ({ i, h: hex2hsv(picCache[b.cc].col) }));
   arr.sort((a,z) => a.h[0] - z.h[0]);
   const cl = [[0]];
   for (let k = 1; k < arr.length; k++) {
@@ -179,13 +224,16 @@ function recolour() {
   for (const b of balls) b.disc = null;
 }
 function discFor(b) {
-  const rec = flagCache[b.cc], px = Math.round(P.br * 2);
+  const rec = picCache[b.cc], px = Math.round(P.br * 2);
   if (!rec.img) return null;
   const c = document.createElement("canvas"); c.width = c.height = px;
   const x = c.getContext("2d");
   x.beginPath(); x.arc(px/2, px/2, px/2, 0, TAU); x.clip();
-  const s = Math.min(rec.img.width, rec.img.height);
-  x.drawImage(rec.img, (rec.img.width-s)/2, (rec.img.height-s)/2, s, s, 0, 0, px, px);
+  const w = rec.img.width, h = rec.img.height, s = Math.min(w, h);
+  // Centred sideways always, vertically only on a wide picture: the middle
+  // square of a portrait is a chest. Same 12% as disc() in main.py.
+  const top = w >= h ? (h-s)/2 : (h-s)*0.12;
+  x.drawImage(rec.img, (w-s)/2, top, s, s, 0, 0, px, px);
   return c;
 }
 
@@ -217,7 +265,7 @@ function restart(s) {
     const lines = [];
     for (let k = 0; k < P.l0; k++)                       // own wedge, evenly filled
       lines.push(norm(a + (k - (P.l0-1)/2) * share / (P.l0 + 1)));
-    const rec = loadFlag(cc, i);
+    const rec = loadPic(cc, i);
     return { cc, i, col: rec.col, disc: null, lines, alive: true, bounces: 0, ready: 0,
              nextBounce: 0, crack: -1, spd: P.v0,
              x: P.CX + rr * Math.cos(a), y: P.CY + rr * Math.sin(a),
@@ -569,11 +617,35 @@ function draw() {
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (hook) drawHook();
+  if (!over) drawStats(alive);                 // the banner sits where it does
   if (over) {
     ctx.textAlign = "center"; ctx.font = "900 64px Arial Black, sans-serif";
     ctx.lineWidth = 8; ctx.strokeStyle = "#000";
     ctx.strokeText(over, W/2, H - 260); ctx.fillStyle = "#fff"; ctx.fillText(over, W/2, H - 260);
   }
+}
+
+// Live top-N by tether count, under the arena - same numbers main.py burns
+// into the video. Drawn outside the camera transform, or the finish's push-in
+// would carry it off the bottom of the frame.
+const STATS_TOP = 5, STATS_Y = 1608, STATS_ROW = 58;
+function drawStats(alive) {
+  const rows = alive.slice().sort((a, b) => b.lines.length - a.lines.length || a.i - b.i)
+                    .slice(0, STATS_TOP);
+  ctx.font = "900 38px Arial Black, Impact, sans-serif";
+  ctx.textBaseline = "middle"; ctx.lineWidth = 6;
+  rows.forEach((b, k) => {
+    const y = STATS_Y + k * STATS_ROW + STATS_ROW / 2;
+    ctx.fillStyle = b.col; ctx.fillRect(60, y - 13, 18, 26);
+    let name = disp(b.cc).toUpperCase();
+    while (name && ctx.measureText(name).width > 830) name = name.slice(0, -1);
+    ctx.textAlign = "left";
+    ctx.strokeStyle = "#000"; ctx.strokeText(name, 98, y);
+    ctx.fillStyle = "#fff"; ctx.fillText(name, 98, y);
+    ctx.textAlign = "right";
+    ctx.strokeText(String(b.lines.length), 1020, y);
+    ctx.fillStyle = b.col; ctx.fillText(String(b.lines.length), 1020, y);
+  });
 }
 
 let nextDecay = 0, slowCur = 1, slowAt = -1;
@@ -637,7 +709,7 @@ function advance(dtRaw) {
   const a = 1 - Math.exp(-dtRaw / 0.45);
   camX += (tx - camX) * a; camY += (ty - camY) * a; camZ += (tz - camZ) * a;
   const left = balls.filter(b => b.alive);
-  if (left.length <= 1) over = left.length ? left[0].cc.toUpperCase() + " WINS" : "DRAW";
+  if (left.length <= 1) over = left.length ? disp(left[0].cc).toUpperCase() + " WINS" : "DRAW";
 }
 
 let last = performance.now();
@@ -650,7 +722,7 @@ function frame(now) {
     "сид " + seed + "   время " + T.toFixed(1) + "s   живых " + alive.length +
     "   линий " + alive.reduce((s,b) => s + b.lines.length, 0) + "\n" +
     alive.slice().sort((a,b) => b.lines.length - a.lines.length)
-      .map(b => b.cc.toUpperCase() + "  " + String(b.lines.length).padStart(2) + " лин  " +
+      .map(b => disp(b.cc).toUpperCase() + "  " + String(b.lines.length).padStart(2) + " лин  " +
                 String(Math.round(speedOf(b))).padStart(5) + " px/s  " +
                 String(b.bounces).padStart(3) + " рик").join("\n");
   requestAnimationFrame(frame);
@@ -660,6 +732,7 @@ $("again").onclick = () => restart();
 $("same").onclick = () => restart(seed);
 $("pause").onclick = e => { paused = !paused; e.target.textContent = paused ? "Пуск" : "Пауза"; };
 $("cc").onchange = () => restart();
+loadPack("countries", false).catch(packFailed);
 $("muteBtn").onclick = e => { muted = !muted; e.target.textContent = muted ? "Звук: выкл" : "Звук: вкл"; };
 $("dumpBtn").onclick = () => {
   const d = $("dump");

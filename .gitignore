@@ -1,3 +1,9 @@
 out/
 __pycache__/
 .env
+
+# Pack pictures fetch themselves on first use; only the flags are committed
+# (they are 46 files of 4 KB, and a scheduled render should not depend on
+# Wikipedia being up to draw a country).
+packs/*/
+!packs/countries/

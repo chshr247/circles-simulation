@@ -14,8 +14,11 @@ on:
     - cron: "23 19 * * *"
   workflow_dispatch:
     inputs:
+      pack:
+        description: 'what races: countries, rappers, footballers, adult, streamers, presidents, kpop - or random'
+        default: random
       countries:
-        description: 'codes, or random8 / random10'
+        description: 'ids from the pack, or random8 / random10'
         default: random8
       hook:
         description: 'text on the frame, or "random"'
@@ -57,18 +60,21 @@ jobs:
 
       # Cheap, and it is the half of the pipeline nothing else exercises: a
       # broken caption is only noticed on the desk, hours later, by hand.
+      - run: python packs.py
       - run: python tags.py
 
       - name: Make one video
         run: |
           python main.py \
+            --pack "${{ inputs.pack || 'random' }}" \
             --countries "${{ inputs.countries || 'random8' }}" \
             --hook "${{ inputs.hook || 'random' }}" \
             --trending "${{ inputs.trending || 0 }}"
 
       # The meta file is not decoration next to the mp4: it carries the caption,
-      # and the caption cannot be rebuilt afterwards - the countries were drawn
-      # at random here and the winner is only known once the run was simulated.
+      # and the caption cannot be rebuilt afterwards - the pack and its line-up
+      # were drawn at random here and the winner is only known once the run
+      # was simulated.
       - uses: actions/upload-artifact@v4
         with:
           name: video-${{ github.run_id }}

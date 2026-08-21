@@ -7,6 +7,7 @@ No tethers left -> the ball dies. Last ball standing wins.
 """
 import argparse, colorsys, json, math, os, random, subprocess, sys, time, urllib.parse, urllib.request, wave
 import numpy as np
+import packs
 import tags
 from PIL import Image, ImageDraw, ImageFont
 
@@ -47,11 +48,10 @@ REWARD_FULL, REWARD_ZERO = 25.0, 45.0   # wall reward fades out over this window
                                         # past REWARD_ZERO cuts destroy, not steal
 HARD_STOP = 120.0
 MIN_DUR, MAX_DUR = 30.0, 88.0
+STATS_TOP = 5                # live leaderboard rows under the arena
+STATS_Y, STATS_ROW = 1608, 58
 SS = 2                       # supersampling for anti-aliasing
-DEFAULT_CC = "br,ar,us,de,fr,jp,it,es"
-POOL = ("br ar us de fr jp it es gb mx pt nl in kr tr pl ca au eg ng za se no "
-        "ch be gr ie dk fi cz ro ua id th vn ph ma sa ae il cl co pe nz").split()
-FLAG_URL = "https://flagcdn.com/w320/{}.png"
+DEFAULT_CC = "random8"
 
 
 # ---------------------------------------------------------------- geometry
@@ -365,6 +365,7 @@ def simulate(seed, n_balls, record=True):
         if len(alive) <= 1:
             return dict(frames=frames, events=events, duration=t,
                         winner=alive[0].i if alive else None,
+                        runner=doomed.i if doomed else None,
                         duel=t - (duel_at if duel_at is not None else t))
     return None
 
@@ -444,15 +445,22 @@ def _camera(frames, from_frame, winner=None):
     return track
 
 
-def find_seed(seed_arg, n_balls, want=None, limit=400, shortlist=8):
+def find_seed(seed_arg, n_balls, want=None, pair=None, limit=400, shortlist=8):
     """Search seeds for a run that lands in the duration window.
 
     With `want` set, only runs that ball wins are considered, and of those the
     one with the longest final duel is taken - that stretch is the whole payoff,
     so a seed that gets there in two seconds makes a dull video.
+
+    `pair` additionally pins who the last two standing are. Out of eight balls
+    that is one run in 28 before the winner is even asked for, so the search
+    gets a far bigger budget - it is still seconds, the shortlisting sim does
+    not record frames.
     """
     if seed_arg != "auto":
         return int(seed_arg)
+    if pair:
+        limit, shortlist = limit * 10, 3
     start = random.randrange(1 << 30)
     best, tried = [], 0
     for k in range(limit):
@@ -462,6 +470,8 @@ def find_seed(seed_arg, n_balls, want=None, limit=400, shortlist=8):
         if not r or not MIN_DUR <= r["duration"] <= MAX_DUR:
             continue
         if want is not None and r["winner"] != want:
+            continue
+        if pair and {r["winner"], r["runner"]} != pair:
             continue
         best.append((r["duel"], s, r["duration"], r["winner"]))
         if want is None or len(best) >= shortlist:
@@ -474,15 +484,9 @@ def find_seed(seed_arg, n_balls, want=None, limit=400, shortlist=8):
     return s
 
 
-# ---------------------------------------------------------------- flags
-def flag_image(cc):
-    path = os.path.join(HERE, "flags", cc + ".png")
-    if not os.path.exists(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        req = urllib.request.Request(FLAG_URL.format(cc), headers={"User-Agent": "circles/1"})
-        with urllib.request.urlopen(req, timeout=20) as r, open(path, "wb") as f:
-            f.write(r.read())
-    return Image.open(path).convert("RGB")
+# ---------------------------------------------------------------- pictures
+def item_image(pack, item):
+    return Image.open(packs.image_path(pack, item)).convert("RGB")
 
 
 def dominant(img):
@@ -507,10 +511,17 @@ def _neon(c):
 
 
 def disc(img, px):
-    """Flag centre-cropped into a circle of diameter px, with an alpha mask."""
+    """Picture cropped into a circle of diameter px, with an alpha mask.
+
+    Centred sideways always, but only centred vertically on a wide picture. A
+    flag is wider than tall and a portrait is not, and the middle square of a
+    portrait is a chest: faces sit near the top, so a tall picture is cropped
+    from near the top or the pack of rappers is a pack of shoulders.
+    """
     w, h = img.size
     s = min(w, h)
-    sq = img.crop(((w - s) // 2, (h - s) // 2, (w + s) // 2, (h + s) // 2))
+    top = (h - s) // 2 if w >= h else int((h - s) * 0.12)
+    sq = img.crop(((w - s) // 2, top, (w + s) // 2, top + s))
     sq = sq.resize((px, px), Image.LANCZOS).convert("RGBA")
     mask = Image.new("L", (px * 4, px * 4), 0)
     ImageDraw.Draw(mask).ellipse((0, 0, px * 4 - 1, px * 4 - 1), fill=255)
@@ -891,8 +902,30 @@ def _crack_lines(cx, cy, r, seed_i, grow):
     return out
 
 
-def render(run, ccs, hook, out, preview=0, notes=None):
-    flags = [flag_image(c) for c in ccs]
+def draw_stats(img, snap, names, cols, f):
+    """Live top-N by tether count, under the arena. Drawn on the cropped frame
+    rather than the arena layer, same as the hook: the finish zooms in, and a
+    scoreboard that zooms with it walks straight off the bottom of the video."""
+    d = ImageDraw.Draw(img)
+    rows = sorted(snap, key=lambda r: (-len(r[3]), r[2]))[:STATS_TOP]
+    for k, row in enumerate(rows):
+        i, n = row[2], len(row[3])
+        y = STATS_Y + k * STATS_ROW + STATS_ROW // 2
+        d.rectangle([60, y - 13, 78, y + 13], fill=cols[i])
+        name = names[i]
+        while name and d.textlength(name, font=f) > 830:      # long ones exist
+            name = name[:-1]
+        d.text((98, y), name, font=f, fill=(255, 255, 255), anchor="lm",
+               stroke_width=3, stroke_fill=(0, 0, 0))
+        d.text((1020, y), str(n), font=f, fill=cols[i], anchor="rm",
+               stroke_width=3, stroke_fill=(0, 0, 0))
+
+
+def render(run, pack, ids, hook, out, preview=0, notes=None):
+    flags = [item_image(pack, i) for i in ids]
+    roster = packs.roster(pack)
+    names = [packs.display(roster.get(i, i)).upper() for i in ids]
+    stats_font = font(38)
     cols = spread_hues([dominant(f) for f in flags])
     discs = [disc(f, BALL_R * 2 * SS) for f in flags]
 
@@ -961,6 +994,7 @@ def render(run, ccs, hook, out, preview=0, notes=None):
         else:
             shot = img.resize((W, H), Image.LANCZOS)
         shot.paste(overlay, (0, 0), overlay)
+        draw_stats(shot, snap, names, cols, stats_font)
         p.stdin.write(shot.tobytes())
         if k % 150 == 0:
             print("  frame %d/%d" % (k, len(frames)), flush=True)
@@ -999,28 +1033,26 @@ def selftest():
             ok += 1
             durs.append(round(r["duration"], 1))
             assert r["winner"] is not None and 0 < r["duration"] <= HARD_STOP
+            assert r["runner"] is not None and r["runner"] != r["winner"]
     print("selftest ok: %d/20 runs finished, durations %s" % (ok, sorted(durs)))
+    # the leaderboard is sorted by tether count, most first, ties by ball index
+    snap = [(0, 0, 3, (1,) * 4, -1.0), (0, 0, 1, (1,) * 9, -1.0), (0, 0, 0, (1,) * 9, -1.0)]
+    assert [r[2] for r in sorted(snap, key=lambda r: (-len(r[3]), r[2]))] == [0, 1, 3]
 
 
-def pick_countries(spec):
-    if spec.startswith("random"):
-        return random.sample(POOL, int(spec[6:] or 8))
-    return [c.strip().lower() for c in spec.split(",") if c.strip()]
-
-
-def one(ccs, hook, seed_arg, out, preview, notes=None, want=None):
-    seed = find_seed(seed_arg, len(ccs), want)
-    run = slow_finish(simulate(seed, len(ccs)))
-    winner = ccs[run["winner"]]
+def one(pack, ids, hook, seed_arg, out, preview, notes=None, want=None, pair=None):
+    seed = find_seed(seed_arg, len(ids), want, pair)
+    run = slow_finish(simulate(seed, len(ids)))
+    winner = ids[run["winner"]]
     print("winner: %s  duration: %.1fs  events: %d"
           % (winner.upper(), run["duration"], len(run["events"])))
-    render(run, ccs, hook, out, preview, notes)
+    render(run, pack, ids, hook, out, preview, notes)
     # Written beside the mp4 for whoever posts it. Nothing here can be worked
     # out from the file later: the countries are drawn at random and the winner
     # is only known once the run has been simulated.
     with open(os.path.splitext(out)[0] + ".meta.json", "w", encoding="utf-8") as f:
-        json.dump({"hook": hook, "countries": ccs, "winner": winner, "seed": seed,
-                   "caption": tags.caption(hook, ccs, winner)}, f,
+        json.dump({"hook": hook, "pack": pack, "items": ids, "winner": winner,
+                   "seed": seed, "caption": tags.caption(hook, pack, ids, winner)}, f,
                   ensure_ascii=False, indent=1)
     return out
 
@@ -1029,12 +1061,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hook", default="WHO WILL WIN",
                     help="text on the frame, or \"random\" for one per video")
+    ap.add_argument("--pack", default=packs.DEFAULT,
+                    help="what races: %s, or \"random\" for one per video"
+                         % ", ".join(packs.all_packs()))
     ap.add_argument("--countries", default=DEFAULT_CC,
-                    help="codes, or random8 / random10 to draw from the pool")
+                    help="ids from the pack, or random8 / random10 to draw from it")
     ap.add_argument("--seed", default="auto")
     ap.add_argument("--out", default="")
     ap.add_argument("--count", type=int, default=1, help="how many videos to render")
-    ap.add_argument("--winner", default="", help="country code that must win")
+    ap.add_argument("--winner", default="", help="the id that must win")
+    ap.add_argument("--finalists", default="",
+                    help="the two ids that must be the last standing, e.g. ua,us")
     ap.add_argument("--preview", type=int, default=0, help="render only first N seconds")
     ap.add_argument("--melody", default=os.path.join(HERE, "sounds", "music"),
                     help="track, or a folder of them to draw from; \"\" for a plain scale")
@@ -1058,10 +1095,27 @@ def main():
             print("melody: %s (%d notes)" % (os.path.basename(track), len(notes)))
         out = a.out or os.path.join(
             HERE, "out", "circles_%s_%d.mp4" % (time.strftime("%Y%m%d_%H%M%S"), k + 1))
-        ccs = pick_countries(a.countries)
-        want = ccs.index(a.winner.lower()) if a.winner else None
-        hook = random.choice(tags.HOOKS) if a.hook == "random" else a.hook
-        print(one(ccs, hook, a.seed, out, a.preview, notes, want))
+        pack = random.choice(packs.all_packs()) if a.pack == "random" else a.pack
+        ids = packs.pick(pack, a.countries)
+        print("pack: %s  -  %s" % (pack, ", ".join(ids)))
+        fin = [c.strip().lower() for c in a.finalists.split(",") if c.strip()]
+        if a.finalists and len(fin) != 2:
+            sys.exit("--finalists needs exactly two ids, e.g. ua,us")
+        if a.winner and fin and a.winner.lower() not in fin:
+            sys.exit("--winner has to be one of --finalists")
+        # A drawn roster need not contain who was asked for, so they are seated
+        # into it - otherwise `--countries random8 --winner ua` is a coin flip
+        # on whether the run can even be searched for.
+        for c in dict.fromkeys([x for x in [a.winner.lower()] + fin if x]):
+            if c not in ids:
+                packs.image_path(pack, c)          # fetch its picture like pick did
+                free = [k for k, x in enumerate(ids) if x not in fin and x != a.winner.lower()]
+                ids[random.choice(free)] = c
+                print("  seated %s into the draw" % c)
+        want = ids.index(a.winner.lower()) if a.winner else None
+        pair = {ids.index(c) for c in fin} if fin else None
+        hook = random.choice(tags.hooks(pack)) if a.hook == "random" else a.hook
+        print(one(pack, ids, hook, a.seed, out, a.preview, notes, want, pair))
 
 
 if __name__ == "__main__":

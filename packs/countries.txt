@@ -1,0 +1,16 @@
+us USA
+br Brazil
+ar Argentina
+ua Ukraine
+de Germany
+fr France
+gb UK
+it Italy
+es Spain
+pt Portugal
+jp Japan
+kr Korea
+cn China
+in India
+tr Turkey
+ru Russia
