@@ -1,0 +1,14 @@
+# No Wikipedia picture worth racing: the discs in packs/months/ are drawn -
+# a colour per month and its first three letters - and committed with them.
+jan January
+feb February
+mar March
+apr April
+may May
+jun June
+jul July
+aug August
+sep September
+oct October
+nov November
+dec December

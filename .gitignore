@@ -7,3 +7,5 @@ __pycache__/
 # Wikipedia being up to draw a country).
 packs/*/
 !packs/countries/
+# months has no page to fetch: its discs are drawn, so they live in the repo.
+!packs/months/

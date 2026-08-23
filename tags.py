@@ -27,6 +27,9 @@ GENERIC = {
                    "#viral", "#geopolitics"],
     "kpop":      ["#kpop", "#kpopfyp", "#idol", "#bias", "#whowillwin",
                   "#marblerace", "#simulation", "#fyp", "#viral", "#comeback"],
+    "months":    ["#birthdaymonth", "#yourmonth", "#whowillwin", "#marblerace",
+                  "#simulation", "#satisfying", "#physics", "#asmr", "#fyp",
+                  "#viral"],
     # Deliberately bland: naming the industry is what gets the video pulled.
     "adult":     ["#guessher", "#whowillwin", "#marblerace", "#simulation",
                   "#satisfying", "#physics", "#fyp", "#viral", "#round1", "#top20"],
@@ -44,6 +47,8 @@ HOOKS = {
                    "GUESS THE WINNER", "COMMENT YOUR COUNTRY", "BET ON ONE"],
     "kpop":      ["WHO WILL WIN?", "LAST GROUP STANDING", "PICK YOUR BIAS",
                   "GUESS THE WINNER", "COMMENT YOUR GROUP", "BET ON ONE"],
+    "months":    ["WHO WILL WIN?", "LAST MONTH STANDING", "PICK YOUR MONTH",
+                  "GUESS THE WINNER", "COMMENT YOUR BIRTH MONTH", "BET ON ONE"],
     "adult":     ["WHO WILL WIN?", "LAST ONE STANDING", "PICK ONE",
                   "GUESS THE WINNER", "COMMENT YOUR PICK", "BET ON ONE"],
 }
