@@ -14,12 +14,13 @@ Needs the `gh` CLI authenticated, and a .env beside this file (see
 .env.example) pointing at the fork. Run it from Task Scheduler as often as you
 like: it posts `-n` videos and leaves the rest queued in out/.
 """
-import argparse, json, os, re, subprocess, sys, time
+import argparse, csv, json, os, re, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out")
 FETCHED = os.path.join(OUT, ".fetched")   # artifact names already downloaded
 POSTED = os.path.join(OUT, ".posted")     # mp4 names already on the account
+LOG = os.path.join(OUT, "posted.csv")     # ...and what each of them was
 PREFIX = "video-"
 
 # Printed by the fork on a real upload and only there - upstream exits 0 on
@@ -52,6 +53,26 @@ def seen(path):
 def mark(path, name):
     with open(path, "a", encoding="utf-8") as f:
         f.write(name + "\n")
+
+
+def log_post(mp4, meta, cid):
+    """One row per upload - the only place a pack and a mode meet a TikTok id.
+
+    CI drew both at random and threw the machine away; the mp4 is deleted the
+    moment it is posted. Without this row there is nothing left to join a
+    video's numbers back to the combination that made it, and the choice of
+    what to render stays a guess forever. Anything missing is an artifact
+    rendered before the meta file carried it, and costs that cell only.
+    """
+    new = not os.path.exists(LOG)
+    with open(LOG, "a", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(["posted", "pack", "mode", "duration", "winner",
+                        "video", "creation_id"])
+        w.writerow([time.strftime("%Y-%m-%d %H:%M"), meta.get("pack", ""),
+                    meta.get("mode", ""), meta.get("duration", ""),
+                    meta.get("winner", ""), os.path.basename(mp4), cid])
 
 
 def gh(*args):
@@ -185,6 +206,7 @@ def main():
                                     meta["caption"]))
         cid = upload(mp4, meta["caption"], a.private)
         mark(POSTED, os.path.basename(mp4))
+        log_post(mp4, meta, cid)
         # 60 MB a video, three a day: kept, this fills a 50 GB server disk
         # inside a year and nothing else here would ever notice. The meta file
         # stays as the record, and CI holds the mp4 for five more days.
