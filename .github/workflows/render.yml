@@ -20,9 +20,15 @@ on:
       countries:
         description: 'ids from the pack, or random8 / random10'
         default: random8
+      mode:
+        description: 'ruleset: tether, escape, climb, paint, bomb, zone - or random'
+        default: random
       hook:
         description: 'text on the frame, or "random"'
         default: random
+      sfx:
+        description: 'melody = hits play the track notes, plain = hits just sound like hits'
+        default: melody
       trending:
         description: 'chart tracks to pull into the melody pool first (0 = use what is committed)'
         default: "0"
@@ -68,7 +74,9 @@ jobs:
           python main.py \
             --pack "${{ inputs.pack || 'random' }}" \
             --countries "${{ inputs.countries || 'random8' }}" \
+            --mode "${{ inputs.mode || 'random' }}" \
             --hook "${{ inputs.hook || 'random' }}" \
+            --sfx "${{ inputs.sfx || 'melody' }}" \
             --trending "${{ inputs.trending || 0 }}"
 
       # The meta file is not decoration next to the mp4: it carries the caption,

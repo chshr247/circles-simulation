@@ -52,8 +52,28 @@ FALLBACK = ["#whowillwin", "#marblerace", "#simulation", "#satisfying",
 MATCHED = 3      # three named contenders; five would read as a tag wall
 
 
-def hooks(pack):
-    return HOOKS.get(pack, HOOKS["countries"])
+# The pack's hooks assume the first ruleset - "LAST FLAG STANDING" over a race
+# down a shaft is a promise the video does not keep, and a hook that describes
+# the wrong game is the one thing that reliably loses the first two seconds.
+MODE_HOOKS = {
+    "escape": ["3 LIVES EACH", "FALL OUT, LOSE A LIFE", "LAST ONE ALIVE WINS",
+               "DON'T FALL OUT"],
+    # Not "THE RED LINE KILLS" any more: it does, but only until the finish line
+    # drops, and a hook that names the thing the video does NOT end on is the
+    # same mistake as promising a last-flag-standing over a race.
+    "climb":  ["FIRST TO THE LINE", "DON'T GET LEFT BEHIND", "FIRST PAST THE LINE",
+               "RACE TO THE FINISH"],
+    "paint":  ["LAST PLACE IS OUT", "PAINT OR DIE", "MOST GROUND WINS",
+               "CLAIM THE FLOOR"],
+    "bomb":   ["DON'T HOLD THE BOMB", "PASS IT OR YOU ARE OUT", "HOT POTATO",
+               "LAST ONE ALIVE WINS"],
+    "zone":   ["HOLD THE MIDDLE", "KING OF THE HILL", "FILL YOUR BAR FIRST",
+               "STAY IN THE CIRCLE"],
+}
+
+
+def hooks(pack, mode="tether"):
+    return MODE_HOOKS.get(mode) or HOOKS.get(pack, HOOKS["countries"])
 
 
 def flag(cc):
