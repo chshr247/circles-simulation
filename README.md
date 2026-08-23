@@ -1,30 +1,53 @@
 # circles-simulation
 
-Balls on tethers in a 9:16 arena. They bounce, cut each other's tethers,
-speed up on every ricochet; the last one alive wins. One file renders it,
-`main.py`, straight to mp4 through ffmpeg with a melody synthesised from the
-note order of a real track.
+Circles with faces on them, racing in a 9:16 arena, one file rendering it
+straight to mp4 through ffmpeg with a melody synthesised from the note order of
+a real track. What they are racing at is a `--mode`, and there are six.
 
 ```bash
 python main.py --pack random --hook random           # one video into out/
-python main.py --pack rappers --countries random8    # one category
+python main.py --mode random --pack rappers          # one category, any ruleset
 python main.py --countries br,ar,us --winner ar      # a rigged matchup
 python main.py --finalists ua,us --winner ua         # ...and a rigged final two
 python main.py --preview 3                           # first 3 seconds only
+python main.py --sfx plain                           # plain hit sounds, no melody
 python main.py --selftest
 ```
+
+## Modes
+
+| `--mode` | The rules | The number under the arena |
+|---|---|---|
+| `tether` | Balls spawn on tethers to the wall, bounce, cut each other's tethers, speed up on every ricochet. No tethers left, the ball dies. | tethers held |
+| `escape` | One opening in the rim, travelling and widening. Fall through it and you lose a life of three and come back in at the middle. Out of lives, out of the run. | lives left |
+| `climb` | A pachinko shaft of pegs and sliding bars. A red line closes in from behind all the way down, and at 45 seconds a finish line is laid ahead of the leader - first ball across it wins outright. | metres fallen |
+| `paint` | They paint the floor, and every six seconds whoever owns the least of it is out and their colour is wiped off the ground. Two left, a twelve second head to head. | percent of the floor |
+| `bomb` | Hot potato. One ball carries a lit bomb and one touch hands it over - never straight back to whoever gave it. Whoever is holding it when the fuse ends is out, and every fuse after that is shorter than the last. Nothing else winds up: the fuse is the escalation. | saves - times it was passed on in time |
+| `zone` | A circle in the middle, closing as the run goes. Seconds banked while wholly inside it, double for whoever is in there alone, and a ball inside is dragged down to half speed - which is what makes it easy to shove out. Nobody is ever eliminated and nothing banked is ever lost. | percent of the target |
+
+The last five exist because `tether` only has a score worth reading in its last
+ten seconds - until the field thins, "still alive" is the same number for
+everybody. Each of them is built around one number that has to move the whole
+way through: lives counting down, metres counting up, a share of the floor that
+roughly doubles at every cut, a bar filling towards a target.
+
+A mode is one `simulate()` filling the same run dict, and everything after it -
+the seed search, the rigging, the slow finish, the leaderboard, the soundtrack,
+the caption - is mode-blind. Adding a fifth is a function and a row in `MODES`.
 
 ## Packs
 
 What races is a category, not always countries: `countries`, `rappers`,
-`footballers`, `adult`, `streamers`, `presidents`, `kpop` - sixteen of each, the
-ones people argue about. A pack is `packs/<pack>.txt`, one `id Display Name`
+`footballers`, `adult`, `streamers`, `presidents`, `kpop`, `months` - sixteen
+of each, the ones people argue about. A pack is `packs/<pack>.txt`, one `id Display Name`
 per line, and a folder beside it that fills itself the
 first time the pack is drawn - flags come from flagcdn by their code,
 everything else takes the lead picture off the English Wikipedia page the
 display name names. So a new category is a text file and no code.
 
-Only the flags are committed. Every other picture is fetched and cached under
+`months` has no page to fetch, so its twelve discs are drawn - a colour and
+three letters - and committed with the pack. Only those and the flags are
+committed. Every other picture is fetched and cached under
 `packs/<pack>/`, gitignored: a roster line whose page has lost its picture is
 skipped at pick time and costs that line, not the run.
 
@@ -62,6 +85,13 @@ was written beside it.
 python post.py --private     # first run: fetch, post one unlisted, check it
 python post.py               # from then on
 ```
+
+Every post that goes out appends a row to `out/posted.csv`: when, which pack,
+which ruleset, how long, who won, and the id TikTok answered with. CI draws the
+pack and the mode at random and the mp4 is deleted the moment it is posted, so
+that row is the only thing left that can put a video's numbers next to what was
+actually in it - without it, what to render next stays a guess. It is the one
+file in the gitignored `out/` worth keeping.
 
 Setup, once:
 
