@@ -4,8 +4,9 @@ Six rulesets over one arena, one camera and one soundtrack, picked with --mode:
 
   tether  balls spawn with 10-12 lines tethered to the arena wall. They fly and
           bounce (off each other and the wall); every bounce speeds them up. A
-          ball crossing someone else's tether cuts it. Touching the wall grants
-          a new one. No tethers left -> the ball dies. Last ball standing wins.
+          ball crossing someone else's tether cuts it - fans cross each other
+          freely, the cut is what matters. Touching the wall sticks a new
+          tether on at the point of contact, and it stays there. No tethers left -> the ball dies. Last ball standing wins.
   escape  a travelling, widening opening in the rim; falling out costs a life
           of three, and the last one with any left wins.
   climb   a pachinko shaft of pegs and sliding bars, a red line closing in from
@@ -37,11 +38,7 @@ CX, CY, R = 540, 1080, 500   # arena
 BALL_R = 70
 LINES_START = 11
 MAX_LINES = 24
-SLIDE_DEG = 10.0             # anchor drift, deg/s - measured off the reference
-ANCHOR_GAP_DEG = 11.5        # spacing anchors keep on the rim; reference sits at 11.7
 DECAY_EVERY = 2.0            # sudden death: seconds between forced tether losses
-FAN_SPREAD_DEG = 0.0         # arc a ball's tether targets span
-DUEL_SPREAD_DEG = 300.0      # ...and once it is down to two, they wrap the rim
 SLOWMO_TO = 0.22             # how far time is slowed for the kill
 SLOWMO_SECS = 0.5            # seconds of the run, right before the kill
 HOLD_S = 1.6                 # freeze on the winner before the file ends
@@ -247,41 +244,6 @@ def space_ring(vals, sep, full=math.tau):
     return out
 
 
-def slide_anchors(balls, dt):
-    """Anchors drift towards their owner and shove each other aside so no two
-    share a spot. Once per frame: they crawl next to how fast the balls fly,
-    and the reference drifts them at only ~10 deg/s anyway."""
-    all_ = [[b, k, _norm(a)] for b in balls if b.alive
-            for k, a in enumerate(b.lines)]
-    if not all_:
-        return
-    duel = sum(1 for b in balls if b.alive) <= 2
-    # Every tether aims at its own slot in an arc around the owner. All of them
-    # chasing the single nearest point is what made the duel two thin brooms.
-    # In the duel the arc opens right up, and the drift rate goes with it -
-    # 300 degrees at 10 deg/s would take half a minute to get there.
-    spread = math.radians(DUEL_SPREAD_DEG if duel else FAN_SPREAD_DEG)
-    step = math.radians(SLIDE_DEG) * (6.0 if duel else 1.0) * dt
-    per_ball = {}
-    for it in all_:
-        per_ball.setdefault(it[0].i, []).append(it)
-    for group in per_ball.values():
-        group.sort(key=lambda it: it[2])
-        b, m = group[0][0], len(group)
-        mid = math.atan2(b.y - CY, b.x - CX)
-        for k, it in enumerate(group):
-            want = mid + spread * ((k + 0.5) / m - 0.5) if m > 1 else mid
-            d = _norm(want - it[2])
-            if d > math.pi:
-                d -= math.tau                              # shortest way round
-            it[2] = _norm(it[2] + max(-step, min(step, d)))
-    n = len(all_)
-    spaced = space_ring([it[2] for it in all_],
-                        min(math.radians(ANCHOR_GAP_DEG), math.tau / (n + 1)))
-    for it, a in zip(all_, spaced):
-        it[0].lines[it[1]] = a
-
-
 def _reward_p(t):
     # ponytail: this linear fade-out is the whole endgame pressure; make it
     # per-ball only if runs stop landing inside MIN_DUR..MAX_DUR.
@@ -395,11 +357,10 @@ def simulate(seed, n_balls, record=True):
             esc_step = step_now
             for b in live:
                 b.spd = min(cap, b.spd * (1.0 + ESCALATE_PCT / 100.0))
-        slide_anchors(balls, 1.0 / FPS)
         if t > REWARD_ZERO and t > next_decay:
-            # Fans hug their owner, so two balls can genuinely never meet and
-            # the run would sit there forever. Past the window everyone starts
-            # shedding tethers whether or not anyone cuts them.
+            # Two balls can genuinely never meet, and the run would sit there
+            # forever. Past the window everyone starts shedding tethers whether
+            # or not anyone cuts them.
             next_decay = t + DECAY_EVERY
             live = [b for b in balls if b.alive]
             lead = max(live, key=lambda b: (len(b.lines), -b.i), default=None)
@@ -2091,13 +2052,14 @@ def selftest():
     assert b.bounces == 1, "the bounce cooldown let a stuck ball bank speed"
     _ricochet(b, BOUNCE_COOLDOWN * 2, 1.0)
     assert b.spd <= 1.0, "the speed ceiling was ignored"
-    ring = [Ball(k, 0, 0, 1.0, 0.0, [0.0, 0.01, 0.02]) for k in range(3)]
-    slide_anchors(ring, 1.0)                        # anchors must never overlap
-    angs = sorted(a for x in ring for a in x.lines)
-    gaps = [angs[k + 1] - angs[k] for k in range(len(angs) - 1)]
-    gaps.append(angs[0] + math.tau - angs[-1])
-    want = min(math.radians(ANCHOR_GAP_DEG), math.tau / (len(angs) + 1))
-    assert min(gaps) > want - 1e-9, "anchors ended up on top of each other"
+    # anchors are stuck where they were struck: frame to frame the only angles
+    # that are new are the ones a wall hit just added, never a drifted copy of
+    # one that was already there
+    prev = None
+    for snap in simulate(4242, 8)["frames"]:
+        now = {a for row in snap for a in row[3]}
+        assert prev is None or len(now - prev) <= 16, "an anchor moved"
+        prev = now
     b = Ball(0, 0, 0, 100.0, 0.0, [])        # steering is a heading, never a speed
     _steer(b, 0.0, 1.0, math.radians(30))
     assert abs(math.hypot(b.vx, b.vy) - b.spd) < 1e-9, "steering changed the speed"

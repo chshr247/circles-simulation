@@ -64,8 +64,8 @@
   <h2>Линии</h2>
   <div class="row"><label>на старте</label><input type="range" id="l0" min="2" max="30" step="1" value="11"><output></output></div>
   <div class="row"><label>максимум</label><input type="range" id="lmax" min="4" max="60" step="1" value="24"><output></output></div>
-  <div class="row"><label>скольжение °/с (реф. ≈10)</label><input type="range" id="slide" min="0" max="400" step="1" value="10"><output></output></div>
-  <div class="row"><label>зазор якорей ° (реф. ≈11.7)</label><input type="range" id="gap" min="0.5" max="20" step="0.5" value="11.5"><output></output></div>
+  <div class="row"><label>скольжение °/с (реф. ≈10)</label><input type="range" id="slide" min="0" max="400" step="1" value="0"><output></output></div>
+  <div class="row"><label>зазор якорей ° (реф. ≈11.7)</label><input type="range" id="gap" min="0" max="20" step="0.5" value="0"><output></output></div>
   <div class="row"><label>разброс веера °</label><input type="range" id="spread" min="0" max="360" step="10" value="0"><output></output></div>
   <div class="row"><label>разброс в дуэли °</label><input type="range" id="spreadDuel" min="0" max="360" step="10" value="300"><output></output></div>
   <div class="row"><label>тень владельца ×</label><input type="range" id="shadow" min="0" max="3" step="0.1" value="1"><output></output></div>
@@ -740,9 +740,7 @@ $("dumpBtn").onclick = () => {
   d.value =
     "BALL_R = " + P.br + "\nR = " + P.R + "\nSPAWN_R = " + P.spawnR +
     "\nLINES_START = " + P.l0 + "\nMAX_LINES = " + P.lmax +
-    "\nSLIDE_DEG = " + P.slide + "\nANCHOR_GAP_DEG = " + P.gap +
     "\nSHADOW = " + P.shadow + "\nCUT_EVERY = " + P.cutEvery +
-    "\nFAN_SPREAD_DEG, DUEL_SPREAD_DEG = " + P.spread + ", " + P.spreadDuel +
     "\nSLOWMO_SECS, SLOWMO_TO = " + P.slowSecs + ", " + P.slowTo +
     "\nSPEED0, SPEED_GAIN = " + P.v0 + ", " + (1 + P.gain/100).toFixed(3) +
     "\nSPEED_MAX, EARLY_SPEED_MAX = " + P.vmax + ", " + P.vEarly +
