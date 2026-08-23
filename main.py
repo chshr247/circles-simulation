@@ -491,24 +491,18 @@ def _camera(frames, from_frame, winner=None):
     return track
 
 
-def find_seed(seed_arg, n_balls, want=None, pair=None, limit=400, shortlist=8,
-              sim=None):
+def find_seed(seed_arg, n_balls, limit=400, shortlist=8, sim=None):
     """Search seeds for a run that lands in the duration window.
 
-    With `want` set, only runs that ball wins are considered, and of those the
-    one with the longest final duel is taken - that stretch is the whole payoff,
-    so a seed that gets there in two seconds makes a dull video.
-
-    `pair` additionally pins who the last two standing are. Out of eight balls
-    that is one run in 28 before the winner is even asked for, so the search
-    gets a far bigger budget - it is still seconds, the shortlisting sim does
-    not record frames.
+    Nothing here knows or cares who wins - the flags are seated onto the run
+    afterwards (see `seat`), so every run that fits the window is usable. Of
+    the shortlist the one with the longest final duel is taken: that stretch is
+    the whole payoff, and a run that gets there in two seconds makes a dull
+    video.
     """
     if seed_arg != "auto":
         return int(seed_arg)
     sim = sim or simulate
-    if pair:
-        limit, shortlist = limit * 10, 3
     start = random.randrange(1 << 30)
     best, tried = [], 0
     for k in range(limit):
@@ -517,19 +511,33 @@ def find_seed(seed_arg, n_balls, want=None, pair=None, limit=400, shortlist=8,
         r = sim(s, n_balls, record=False)
         if not r or not MIN_DUR <= r["duration"] <= MAX_DUR:
             continue
-        if want is not None and r["winner"] != want:
-            continue
-        if pair and {r["winner"], r["runner"]} != pair:
-            continue
         best.append((r["duel"], s, r["duration"], r["winner"]))
-        if want is None or len(best) >= shortlist:
+        if len(best) >= shortlist:
             break
     if not best:
-        sys.exit("no seed matched - loosen the knobs or pick another winner")
+        sys.exit("no seed matched - loosen the knobs")
     duel, s, dur, win = max(best)
     print("seed %d: %.1fs, winner #%d, final duel %.1fs (%d tried, %d matched)"
           % (s, dur, win, duel, tried, len(best)))
     return s
+
+
+def seat(ids, run, want, pair):
+    """Put the asked-for flags on the balls the run already picked.
+
+    Which picture a ball carries is a label the physics never reads, so a
+    rigged ending is a rename - not a hunt for a seed whose winner happens to
+    be wearing the right flag. `want` is who must win, `pair` the two who must
+    be last standing, both as indices into `ids`.
+    """
+    ids = list(ids)
+    # the winner first, so the runner-up lands in whatever slot is left
+    names = [ids[i] for i in sorted(pair or ([want] if want is not None else []),
+                                    key=lambda i: i != want)]
+    for slot, name in zip((run["winner"], run["runner"]), names):
+        j = ids.index(name)
+        ids[slot], ids[j] = ids[j], ids[slot]
+    return ids
 
 
 # ---------------------------------------------------------------- other modes
@@ -2076,6 +2084,15 @@ def selftest():
             assert r["winner"] is not None and 0 < r["duration"] <= HARD_STOP
             assert r["runner"] is not None and r["runner"] != r["winner"]
     print("selftest ok: %d/20 runs finished, durations %s" % (ok, sorted(durs)))
+    # a rigged ending is a rename: the asked-for flags end up on the balls the
+    # run picked, and the roster is still the same eight
+    run = {"winner": 3, "runner": 5}
+    got = seat(list("abcdefgh"), run, 0, {0, 6})
+    assert got[3] == "a" and got[5] == "g" and sorted(got) == list("abcdefgh"), got
+    got = seat(list("abcdefgh"), run, None, {1, 2})
+    assert {got[3], got[5]} == {"b", "c"} and sorted(got) == list("abcdefgh"), got
+    assert seat(list("abcdefgh"), run, None, None) == list("abcdefgh")
+
     # the leaderboard is sorted by the mode's own score, most first, ties by
     # index, and a ball that is out (crack >= 0) is off it however it scored
     snap = [(0, 0, 3, (), -1.0, 4), (0, 0, 1, (), -1.0, 9), (0, 0, 0, (), -1.0, 9),
@@ -2159,9 +2176,10 @@ def one(pack, ids, hook, seed_arg, out, preview, notes=None, want=None, pair=Non
     sim, _fmt, finish = MODES[mode]
     # Nothing to shortlist when every run is the same length and the ending is
     # a tally rather than a duel - the first seed that answers is the answer.
-    seed = find_seed(seed_arg, len(ids), want, pair,
-                     shortlist=1 if mode == "paint" else 8, sim=sim)
+    seed = find_seed(seed_arg, len(ids), shortlist=1 if mode == "paint" else 8,
+                     sim=sim)
     run = finish(sim(seed, len(ids)))
+    ids = seat(ids, run, want, pair)
     winner = ids[run["winner"]]
     print("winner: %s  duration: %.1fs  events: %d"
           % (winner.upper(), run["duration"], len(run["events"])))

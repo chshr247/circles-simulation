@@ -31,6 +31,10 @@ everybody. Each of them is built around one number that has to move the whole
 way through: lives counting down, metres counting up, a share of the floor that
 roughly doubles at every cut, a bar filling towards a target.
 
+`--winner` and `--finalists` cost nothing: the run is simulated first and the
+flags are seated onto whichever balls it picked, so rigging an ending is a
+rename, not a hunt for a seed that happens to end that way.
+
 A mode is one `simulate()` filling the same run dict, and everything after it -
 the seed search, the rigging, the slow finish, the leaderboard, the soundtrack,
 the caption - is mode-blind. Adding a fifth is a function and a row in `MODES`.
