@@ -35,16 +35,18 @@ W, H, FPS = 1080, 1920, 60   # 60 so the end of the run does not strobe
 SUB_MIN, SUB_MAX = 4, 320    # substeps per frame, chosen from the fastest ball
 STEP_PX = 6.0                # no ball may move further than this per substep
 CX, CY, R = 540, 1080, 500   # arena
-BALL_R = 70
+BALL_R = BALL_R_DEFAULT = 70
+BALL_R_MODE = {"tether": 42,   # small ball, so the fan is the graphic and not the disc
+               "zone": 44}     # twelve of them share one circle, and the circle wins
 LINES_START = 11
-MAX_LINES = 24
+MAX_LINES = 18
 DECAY_EVERY = 2.0            # sudden death: seconds between forced tether losses
 SLOWMO_TO = 0.22             # how far time is slowed for the kill
 SLOWMO_SECS = 0.5            # seconds of the run, right before the kill
 HOLD_S = 1.6                 # freeze on the winner before the file ends
 ZOOM_MAX = 1.9               # how far the camera pushes in over the slow finish
 ZOOM_TAU = 0.45              # seconds of easing - both for zoom and for the pan
-SPAWN_R = 0.85               # spawn ring, as a fraction of the arena radius
+SPAWN_R = 0.65               # spawn ring, as a fraction of the arena radius
 CUT_EVERY = 0.0              # 0 = a touched tether is always cut, no recharge
 SPEED0, SPEED_GAIN = 400.0, 1.06     # per ricochet of that ball - wall or ball
 SPEED_MAX = 6000.0                   # safety net, not a design knob
@@ -55,9 +57,9 @@ ESCALATE_EVERY = 3.0                 # seconds between speed step-ups
 ESCALATE_PCT = 5.0                   # ...and how much each step adds
 DEATH_MOVE = 0.5             # after the kill: seconds still rolling, easing to a stop
 CRACK_SECS = 0.45            # crack spreads over DEATH_MOVE + this, ending as it vanishes
-REWARD_FULL, REWARD_ZERO = 25.0, 45.0   # wall reward fades out over this window;
-                                        # past REWARD_ZERO cuts destroy, not steal
-                                        # past REWARD_ZERO cuts destroy, not steal
+REWARD_ZERO = 45.0           # the wall stops paying here, and past it cuts
+                             # destroy instead of changing hands - which is what
+                             # lets the run end at all
 HARD_STOP = 120.0
 # The window a run may land in, or find_seed throws the seed away. Was 88, and
 # a minute and a half is a video that gets abandoned rather than finished -
@@ -97,6 +99,14 @@ def _clip_end(ax, ay, ox, oy, clip):
         return None, None
     f = (L - clip) / L
     return ax + dx * f, ay + dy * f
+
+
+def use_ball_r(mode, override=0):
+    """BALL_R is a global because the discs are cut once, at one size - so the
+    ruleset's size has to be in place before the run and the render, not passed
+    down to them."""
+    global BALL_R
+    BALL_R = override or BALL_R_MODE.get(mode, BALL_R_DEFAULT)
 
 
 def anchor_xy(a):
@@ -244,16 +254,6 @@ def space_ring(vals, sep, full=math.tau):
     return out
 
 
-def _reward_p(t):
-    # ponytail: this linear fade-out is the whole endgame pressure; make it
-    # per-ball only if runs stop landing inside MIN_DUR..MAX_DUR.
-    if t <= REWARD_FULL:
-        return 1.0
-    if t >= REWARD_ZERO:
-        return 0.0
-    return 1.0 - (t - REWARD_FULL) / (REWARD_ZERO - REWARD_FULL)
-
-
 def _spawn(rnd, n):
     """Evenly spaced on a ring, each with its own wedge of wall - so nobody
     starts sitting inside someone else's fan."""
@@ -304,7 +304,7 @@ def simulate(seed, n_balls, record=True):
                     _aim(b, *_jitter(rnd, b.vx - 2 * vn * nx, b.vy - 2 * vn * ny,
                                      -nx, -ny))
                     events.append(("wall", t))
-                    if ending is None and len(b.lines) < MAX_LINES and rnd.random() < _reward_p(t):
+                    if ending is None and len(b.lines) < MAX_LINES and t < REWARD_ZERO:
                         b.lines.append(_norm(math.atan2(ny, nx)))
             _bounce_pairs(alive, rnd, t, cap, events)          # ball vs ball
             for b in alive:                                    # cutting tethers
@@ -1062,10 +1062,33 @@ BLAST_R = 380.0              # how far a blast shoves whoever is still standing
 BLAST_SECS = 0.45            # ...and how long its flash stays on screen
 
 # zone: the middle is worth seconds and it closes as the run goes
-ZONE_SPEED = 640.0
-ZONE_R0, ZONE_R1, ZONE_CLOSE = 180.0, 110.0, 45.0    # px, px, seconds to close
-ZONE_TARGET = 16.0           # seconds inside the circle to win it
-ZONE_DRAG = 0.42             # share of its speed a ball keeps while it is in there
+ZONE_SPEED = 300.0           # slower than the other rulesets on purpose: the middle
+                             # is a thing you read, not a thing you chase, and at 640
+                             # the traffic across it was a blur. It is not a lever on
+                             # how crowded the circle gets - speed is set flat every
+                             # substep, so it rescales the clock and not the paths -
+                             # but ZONE_CLOSE runs on real seconds, so a slower field
+                             # meets a wider circle for longer. Hence the target below.
+ZONE_R0, ZONE_R1, ZONE_CLOSE = 120.0, 80.0, 45.0     # px, px, seconds to close.
+                             # This is the lever that pays for the other two: a slow
+                             # field banks more (ZONE_CLOSE runs on real seconds, so
+                             # it meets the wide circle for longer) and a quick gauge
+                             # banks more again, and together they collapsed a run to
+                             # 15-25s. A tighter circle is what buys the window back,
+                             # and it thins the middle out on the way past.
+ZONE_TARGET = 8.0            # seconds inside the circle to win it - retuned
+                             # twice: at BALL_R 44 they shove each other out
+                             # far less than at 70, and at ZONE_DRAG 0.68 they
+                             # bank far less per pass. 16 ran long, 13 ran long
+                             # again once the drag came off.
+ZONE_DRAG = 0.68             # share of its speed a ball keeps while it is in there.
+                             # Not lower: the drag is also the dwell time, and at
+                             # 0.42 a ball loitered 2.4x longer than it would have
+                             # flown through, so the middle was a scrum of three or
+                             # four and nobody was ever in there alone to earn the
+                             # double. Slowing the whole mode does nothing for this -
+                             # speed is set flat every substep, so it is a rescale of
+                             # the clock and not of the path.
 ZONE_SOLO = 2.0              # the clock runs this much faster for a ball in alone
 ZONE_HOT = 0.72              # share of the target that brings the backing up
 ZONE_TIGHT = 10.0            # percent between the top two that counts as a finish
@@ -1821,6 +1844,16 @@ def render(run, pack, ids, hook, out, preview=0, notes=None, mode="tether",
 
     base = Image.new("RGB", (W * SS, H * SS), (5, 5, 8))
     d = ImageDraw.Draw(base)
+    zone_font = None
+    if mode == "zone":
+        # Sized once, against the longest id and the smallest the circle ever
+        # gets, so the name never grows, never reflows and never overruns the
+        # rim it is painted inside.
+        fits = (ZONE_R1 + BALL_R) * 1.45 * SS
+        for px in range(200, 40, -6):
+            zone_font = font(px * SS)
+            if d.textlength(max(ids, key=len).upper(), font=zone_font) <= fits:
+                break
     rim = [(CX - R) * SS, (CY - R) * SS, (CX + R) * SS, (CY + R) * SS]
     if mode in ("tether", "paint", "bomb", "zone"):
         d.ellipse(rim, outline=(255, 255, 255), width=3 * SS)
@@ -1925,26 +1958,35 @@ def render(run, pack, ids, hook, out, preview=0, notes=None, mode="tether",
                            outline=(255, int(90 + 150 * ex[2]), 40),
                            width=max(1, int(4 + 20 * ex[2])) * SS)
         elif mode == "zone" and ex:
-            # The circle takes the colour of whoever is in it alone, because
-            # that is when it pays double - the tint IS the rule. Whose it is
-            # rides in an interpolated channel, same as the bomb's carrier, so
-            # anything between two whole numbers is the slow finish easing from
-            # one owner to the next and the old one holds until it lands.
-            # ...and it is drawn a ball's width out from the radius the sim
-            # measures, because the sim measures centres. Drawn on the radius
-            # itself, a ball whose centre is a pixel outside still overlaps most
-            # of the circle - it is plainly standing in it and plainly not
-            # scoring, which is the one thing a rule on screen may not do.
-            # Out here the drawn edge means what it looks like it means: inside
-            # is inside, and a ball that is not wholly in it is not in it.
+            # The circle is drawn a ball's width out from the radius the sim
+            # measures, because the sim measures centres. On the radius itself
+            # a ball whose centre is a pixel outside still overlaps most of the
+            # circle - plainly standing in it and plainly not scoring, which is
+            # the one thing a rule on screen may not do. Out here the drawn
+            # edge means what it looks like: wholly inside is inside.
+            #
+            # Whose it is, is whoever is in it, decided fresh every frame with
+            # no memory. Two stickier rules were tried and both went stale on
+            # screen - a holder cannot keep a circle he has walked out of, and
+            # an empty circle belongs to nobody and says so, rather than
+            # carrying the last name until someone else turns up.
             zr = ex[0] + BALL_R
-            if abs(ex[1] - round(ex[1])) < 1e-6:
-                owner = int(round(ex[1]))
-            who = owner
-            dr.ellipse([(CX - zr) * SS, (CY - zr) * SS,
-                        (CX + zr) * SS, (CY + zr) * SS],
-                       outline=cols[who] if 0 <= who < len(cols) else (86, 86, 100),
-                       width=(9 if 0 <= who < len(cols) else 5) * SS)
+            box = [(CX - zr) * SS, (CY - zr) * SS, (CX + zr) * SS, (CY + zr) * SS]
+            ins = [r for r in snap if math.hypot(r[0] - CX, r[1] - CY) <= ex[0]]
+            owner = (min(ins, key=lambda r: math.hypot(r[0] - CX, r[1] - CY))[2]
+                     if ins else -1)
+            if owner < 0:
+                dr.ellipse(box, outline=(86, 86, 100), width=5 * SS)
+            else:
+                col = cols[owner]
+                # Solo keeps its own tell - it is the doubling rule, and the
+                # colour means something else now.
+                solo = int(round(ex[1])) if abs(ex[1] - round(ex[1])) < 1e-6 else -1
+                dr.ellipse(box, fill=tuple(int(c * 0.22) for c in col),
+                           outline=col, width=(16 if solo >= 0 else 9) * SS)
+                dr.text((CX * SS, CY * SS), ids[owner].upper(), font=zone_font,
+                        fill=col, anchor="mm", stroke_width=3 * SS,
+                        stroke_fill=(0, 0, 0))
         elif mode == "climb" and ex:
             top, bot = ex[1] - PEG_DY, ex[1] + H + PEG_DY
             for px, py in pegs_near(run["seed"], top, bot):
@@ -2023,10 +2065,15 @@ def render(run, pack, ids, hook, out, preview=0, notes=None, mode="tether",
             # Everyone carries their own bar, so a viewer can follow one face
             # without reading the board under the arena.
             for x, y, i, _l, _c, s in snap:
-                rr = (BALL_R + 15) * SS
-                dr.arc([x * SS - rr, y * SS - rr, x * SS + rr, y * SS + rr],
-                       -90, -90 + 3.599 * max(0.0, min(100.0, s)),
-                       fill=cols[i], width=8 * SS)
+                # On the ball's own edge and over a dark track, because a bare
+                # coloured arc floating a ball's width out reads as a stray
+                # hair - there is nothing behind it to say how full it is, and
+                # at this radius it laps onto whoever is standing alongside.
+                rr = (BALL_R + 4) * SS
+                box = [x * SS - rr, y * SS - rr, x * SS + rr, y * SS + rr]
+                dr.ellipse(box, outline=(38, 38, 46), width=9 * SS)
+                dr.arc(box, -90, -90 + 3.599 * max(0.0, min(100.0, s)),
+                       fill=(255, 255, 255), width=9 * SS)
         cx, cy, z = cam[k] if k < len(cam) else (W / 2.0, H / 2.0, 1.0)
         if z > 1.001:
             box = ((cx - W / (2 * z)) * SS, (cy - H / (2 * z)) * SS,
@@ -2127,6 +2174,7 @@ def selftest():
     # one backdrop tuple per frame - the slow finish interpolates the two lists
     # against each other and a short one would strobe the last second.
     for name, (sim, fmt, finish) in MODES.items():
+        use_ball_r(name)
         r = sim(4242, 8, record=True)
         assert r, "%s never finished inside HARD_STOP" % name
         assert r["winner"] is not None and r["runner"] != r["winner"], name
@@ -2197,7 +2245,6 @@ def one(pack, ids, hook, seed_arg, out, preview, notes=None, want=None, pair=Non
 
 
 def main():
-    global BALL_R
     ap = argparse.ArgumentParser()
     ap.add_argument("--hook", default="WHO WILL WIN",
                     help="text on the frame, or \"random\" for one per video")
@@ -2225,11 +2272,11 @@ def main():
                     help="pull N chart previews into the melody folder first")
     ap.add_argument("--trending-q", default="",
                     help="which chart, e.g. \"phonk\"; blank = global top")
-    ap.add_argument("--ball-r", type=int, default=BALL_R,
-                    help="ball radius in px; drop it when the field is crowded")
+    ap.add_argument("--ball-r", type=int, default=0,
+                    help="ball radius in px, overriding the mode default; drop it "
+                         "when the field is crowded")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
-    BALL_R = a.ball_r
     if a.selftest:
         return selftest()
     plain = a.sfx == "plain"
@@ -2249,6 +2296,7 @@ def main():
         mode = random.choice(list(MODES)) if a.mode == "random" else a.mode
         if mode not in MODES:
             sys.exit("unknown --mode %s; pick one of %s" % (mode, ", ".join(MODES)))
+        use_ball_r(mode, a.ball_r)
         ids = packs.pick(pack, a.countries)
         print("mode: %s  pack: %s  -  %s" % (mode, pack, ", ".join(ids)))
         fin = [c.strip().lower() for c in a.finalists.split(",") if c.strip()]
