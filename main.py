@@ -1076,11 +1076,13 @@ ZONE_R0, ZONE_R1, ZONE_CLOSE = 120.0, 80.0, 45.0     # px, px, seconds to close.
                              # banks more again, and together they collapsed a run to
                              # 15-25s. A tighter circle is what buys the window back,
                              # and it thins the middle out on the way past.
-ZONE_TARGET = 8.0            # seconds inside the circle to win it - retuned
-                             # twice: at BALL_R 44 they shove each other out
-                             # far less than at 70, and at ZONE_DRAG 0.68 they
-                             # bank far less per pass. 16 ran long, 13 ran long
-                             # again once the drag came off.
+ZONE_TARGET = 3.0            # seconds alone in the circle to win it - retuned
+                             # every time the economy moved, and hardest when
+                             # a crowded circle stopped paying at all: only one
+                             # ball banks at a time now, against all of them at
+                             # once before, so the whole field earns several
+                             # times slower and the target came down to match.
+ZONE_TAU = 0.18              # seconds for a ball to take on, or shed, the drag
 ZONE_DRAG = 0.68             # share of its speed a ball keeps while it is in there.
                              # Not lower: the drag is also the dwell time, and at
                              # 0.42 a ball loitered 2.4x longer than it would have
@@ -1089,7 +1091,6 @@ ZONE_DRAG = 0.68             # share of its speed a ball keeps while it is in th
                              # double. Slowing the whole mode does nothing for this -
                              # speed is set flat every substep, so it is a rescale of
                              # the clock and not of the path.
-ZONE_SOLO = 2.0              # the clock runs this much faster for a ball in alone
 ZONE_HOT = 0.72              # share of the target that brings the backing up
 ZONE_TIGHT = 10.0            # percent between the top two that counts as a finish
 
@@ -1228,16 +1229,19 @@ def sim_zone(seed, n_balls, record=True):
     on the board carries a number that only goes up - eight bars filling at once
     and a lead that changes hands on a bounce.
 
-    Two knobs stop those eight bars filling at the same rate. A ball inside the
-    circle is dragged down to ZONE_DRAG of its speed, so drifting in is sticky
-    and one lucky entry is worth real seconds - and it makes whoever is scoring
-    the slowest thing on the floor, which is to say the easiest to knock out of
-    it. And a ball in there alone banks ZONE_SOLO times as fast, so a crowd in
-    the middle is worth less to everyone in it than an empty circle is to one.
+    The circle only pays a ball that is in it alone. A second one steps across
+    and the clock stops for both - so denying the leader costs nothing but
+    walking in, no lead is ever safe, and the middle has to be taken and then
+    kept rather than just reached.
 
-    The circle closes to ZONE_R1 over ZONE_CLOSE seconds. Early it is wide
-    enough that everybody scores and the order keeps swapping; by the end it
-    holds one ball, and the last seconds of the target have to be taken off
+    Two knobs decide how hard keeping it is. A ball inside is dragged down to
+    ZONE_DRAG of its speed over ZONE_TAU seconds, which makes whoever is
+    scoring the slowest thing on the floor and so the easiest to shove out -
+    and because the drag is taken on gradually, pace carries a ball deeper into
+    the circle before it bogs down, so a run at the middle is a way of taking
+    it. And the circle closes to ZONE_R1 over ZONE_CLOSE seconds: early it is
+    wide enough that two balls fit and cancel each other out constantly, by the
+    end it holds one, and the last seconds of the target have to be taken off
     whoever is already sitting in it.
 
     It ends on `slow_finish` like the rest and still gets no push-in, which is
@@ -1253,19 +1257,29 @@ def sim_zone(seed, n_balls, record=True):
     t, close_since, hot_at, solo = 0.0, 0.0, None, -1
     sub = max(SUB_MIN, min(SUB_MAX, int(ZONE_SPEED / FPS / STEP_PX) + 1))
     h = 1.0 / FPS / sub
+    ease = 1.0 - math.exp(-h / ZONE_TAU)     # constant h, so the coefficient is too
     while t < HARD_STOP:
         zr = ZONE_R0 + (ZONE_R1 - ZONE_R0) * min(1.0, t / ZONE_CLOSE)
         for _ in range(sub):
             inside = [b for b in balls if math.hypot(b.x - CX, b.y - CY) < zr]
-            rate = ZONE_SOLO if len(inside) == 1 else 1.0
-            for b in inside:
-                held[b.i] += h * rate
+            # The circle only pays a ball that is in it alone. Two in there and
+            # the clock stops for both, which is the whole mode: denying it
+            # costs nothing but walking in, so the middle has to be taken and
+            # then kept, and a lead is never safe while anyone can step across.
+            if len(inside) == 1:
+                held[inside[0].i] += h
             ins = {b.i for b in inside}
             for b in balls:
+                # Easing onto the drag instead of snapping to it is what gives
+                # the mode a use for speed. Assigned outright, crossing the rim
+                # teleported a ball between 300 and 204 - it stuck on the kerb
+                # going in and shot away coming out, and reaching the middle
+                # was worth no more than grazing the edge. Eased, pace carries
+                # a ball deeper before it bogs down, so a run at the circle is
+                # a way of taking it.
                 want = ZONE_SPEED * (ZONE_DRAG if b.i in ins else 1.0)
-                if abs(b.spd - want) > 1e-6:
-                    b.spd = want
-                    _aim(b, b.vx, b.vy)
+                b.spd += (want - b.spd) * ease
+                _aim(b, b.vx, b.vy)
                 b.x += b.vx * h
                 b.y += b.vy * h
                 d = math.hypot(b.x - CX, b.y - CY) or 1e-9
@@ -1965,26 +1979,25 @@ def render(run, pack, ids, hook, out, preview=0, notes=None, mode="tether",
             # the one thing a rule on screen may not do. Out here the drawn
             # edge means what it looks like: wholly inside is inside.
             #
-            # Whose it is, is whoever is in it, decided fresh every frame with
-            # no memory. Two stickier rules were tried and both went stale on
-            # screen - a holder cannot keep a circle he has walked out of, and
-            # an empty circle belongs to nobody and says so, rather than
-            # carrying the last name until someone else turns up.
+            # Three states, because the rule has three and a viewer has to be
+            # able to tell which one is on screen without counting balls:
+            # empty and dim, one ball and it wears their colour and their name,
+            # two or more and it goes white and blank - occupied, and paying
+            # nobody. Read off the positions rather than the recorded solo
+            # channel, so the circle agrees with the balls drawn inside it on
+            # the interpolated frames of the slow finish too.
             zr = ex[0] + BALL_R
             box = [(CX - zr) * SS, (CY - zr) * SS, (CX + zr) * SS, (CY + zr) * SS]
             ins = [r for r in snap if math.hypot(r[0] - CX, r[1] - CY) <= ex[0]]
-            owner = (min(ins, key=lambda r: math.hypot(r[0] - CX, r[1] - CY))[2]
-                     if ins else -1)
-            if owner < 0:
+            if not ins:
                 dr.ellipse(box, outline=(86, 86, 100), width=5 * SS)
+            elif len(ins) > 1:                   # jammed: the clock has stopped
+                dr.ellipse(box, outline=(235, 235, 245), width=9 * SS)
             else:
-                col = cols[owner]
-                # Solo keeps its own tell - it is the doubling rule, and the
-                # colour means something else now.
-                solo = int(round(ex[1])) if abs(ex[1] - round(ex[1])) < 1e-6 else -1
+                col = cols[ins[0][2]]
                 dr.ellipse(box, fill=tuple(int(c * 0.22) for c in col),
-                           outline=col, width=(16 if solo >= 0 else 9) * SS)
-                dr.text((CX * SS, CY * SS), ids[owner].upper(), font=zone_font,
+                           outline=col, width=14 * SS)
+                dr.text((CX * SS, CY * SS), ids[ins[0][2]].upper(), font=zone_font,
                         fill=col, anchor="mm", stroke_width=3 * SS,
                         stroke_fill=(0, 0, 0))
         elif mode == "climb" and ex:
