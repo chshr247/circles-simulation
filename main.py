@@ -1369,7 +1369,7 @@ def disc(img, px):
 
 
 # ---------------------------------------------------------------- audio
-# ponytail: fixed tempo. Only the ORDER of the track's notes is used, never its
+# NOTE: fixed tempo. Only the ORDER of the track's notes is used, never its
 # timing, so there is no tempo to inherit - this is the grid the run gets snapped
 # to. Tune by ear per batch; estimate it off the source track if that ever stops
 # being enough.
